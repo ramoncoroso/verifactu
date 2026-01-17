@@ -10,8 +10,6 @@ import { createSecureContext, type SecureContextOptions } from 'node:tls';
 import {
   CertificateError,
   CertificateNotFoundError,
-  CertificateExpiredError,
-  InvalidCertificateFormatError,
 } from '../errors/crypto-errors.js';
 
 /**

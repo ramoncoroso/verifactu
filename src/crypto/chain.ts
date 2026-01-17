@@ -5,7 +5,6 @@
  * depends on the previous record's hash.
  */
 
-import { ChainError } from '../errors/crypto-errors.js';
 import type { Invoice, InvoiceCancellation, ChainReference, VerifactuRecord } from '../models/invoice.js';
 import { calculateInvoiceHash, calculateCancellationHash } from './hash.js';
 

@@ -360,3 +360,58 @@ export function xml(
 export function fragment(...elements: (string | undefined)[]): string {
   return elements.filter((e): e is string => e !== undefined).join('');
 }
+
+/**
+ * Serialize an XmlElement to string
+ */
+export function serializeElement(elem: XmlElement, pretty: boolean = false): string {
+  const indent = '';
+  const newline = pretty ? '\n' : '';
+  const childIndent = pretty ? '  ' : '';
+
+  function serialize(el: XmlElement, ind: string): string {
+    const parts: string[] = [];
+    let tagName = el.name;
+    if (el.namespace) {
+      tagName = `${el.namespace}:${el.name}`;
+    }
+
+    parts.push(`${ind}<${tagName}`);
+
+    for (const attr of el.attributes) {
+      let attrName = attr.name;
+      if (attr.namespace) {
+        attrName = `${attr.namespace}:${attr.name}`;
+      }
+      parts.push(` ${attrName}="${escapeXmlAttribute(attr.value)}"`);
+    }
+
+    if (el.children.length === 0) {
+      parts.push('/>');
+      return parts.join('');
+    }
+
+    parts.push('>');
+
+    const hasOnlyText = el.children.length === 1 && typeof el.children[0] === 'string';
+
+    if (hasOnlyText) {
+      parts.push(escapeXml(el.children[0] as string));
+    } else {
+      parts.push(newline);
+      for (const child of el.children) {
+        if (typeof child === 'string') {
+          parts.push(ind + childIndent + escapeXml(child) + newline);
+        } else {
+          parts.push(serialize(child, ind + childIndent) + newline);
+        }
+      }
+      parts.push(ind);
+    }
+
+    parts.push(`</${tagName}>`);
+    return parts.join('');
+  }
+
+  return serialize(elem, indent);
+}

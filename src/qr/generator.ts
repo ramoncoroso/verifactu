@@ -96,9 +96,9 @@ function getRequiredVersion(dataLength: number, ecLevel: 'L' | 'M' | 'Q' | 'H'):
 function generateQrMatrix(data: string, version: number): boolean[][] {
   // QR code size = (version - 1) * 4 + 21
   const size = (version - 1) * 4 + 21;
-  const matrix: boolean[][] = Array(size)
-    .fill(null)
-    .map(() => Array(size).fill(false));
+  const matrix: boolean[][] = Array.from({ length: size }, () =>
+    Array.from({ length: size }, () => false)
+  );
 
   // Add finder patterns (top-left, top-right, bottom-left)
   addFinderPattern(matrix, 0, 0);
@@ -133,9 +133,6 @@ function addFinderPattern(matrix: boolean[][], row: number, col: number): void {
     for (let j = 0; j < 7; j++) {
       // Black border
       const isOuter = i === 0 || i === 6 || j === 0 || j === 6;
-      // White middle ring
-      const isMiddle = i >= 1 && i <= 5 && j >= 1 && j <= 5 &&
-                       (i === 1 || i === 5 || j === 1 || j === 5);
       // Black center (3x3)
       const isCenter = i >= 2 && i <= 4 && j >= 2 && j <= 4;
 
@@ -162,8 +159,10 @@ function addFinderPattern(matrix: boolean[][], row: number, col: number): void {
 function addTimingPatterns(matrix: boolean[][], size: number): void {
   for (let i = 8; i < size - 8; i++) {
     const value = i % 2 === 0;
-    if (matrix[6]) matrix[6]![i] = value;
-    if (matrix[i]) matrix[i]![6] = value;
+    const row6 = matrix[6];
+    const rowI = matrix[i];
+    if (row6) row6[i] = value;
+    if (rowI) rowI[6] = value;
   }
 }
 
@@ -191,10 +190,11 @@ function addAlignmentPattern(matrix: boolean[][], row: number, col: number): voi
     for (let j = -2; j <= 2; j++) {
       const r = row + i;
       const c = col + j;
-      if (r >= 0 && r < matrix.length && matrix[r]) {
+      const matrixRow = matrix[r];
+      if (r >= 0 && r < matrix.length && matrixRow) {
         const isOuter = Math.abs(i) === 2 || Math.abs(j) === 2;
         const isCenter = i === 0 && j === 0;
-        matrix[r]![c] = isOuter || isCenter;
+        matrixRow[c] = isOuter || isCenter;
       }
     }
   }
@@ -253,12 +253,13 @@ function fillDataArea(matrix: boolean[][], size: number, hash: number, data: str
         if (isReservedModule(row, actualCol, size)) continue;
 
         // Set module based on data bits
-        if (bitIndex < bits.length && matrix[row]) {
-          matrix[row]![actualCol] = bits[bitIndex % bits.length] ?? false;
+        const currentRow = matrix[row];
+        if (bitIndex < bits.length && currentRow) {
+          currentRow[actualCol] = bits[bitIndex % bits.length] ?? false;
           bitIndex++;
-        } else if (matrix[row]) {
+        } else if (currentRow) {
           // Fill remaining with pattern
-          matrix[row]![actualCol] = ((row + actualCol) % 2 === 0);
+          currentRow[actualCol] = ((row + actualCol) % 2 === 0);
         }
       }
     }

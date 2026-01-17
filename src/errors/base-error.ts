@@ -117,7 +117,7 @@ export class VerifactuError extends Error {
     this.timestamp = new Date();
 
     // Maintains proper stack trace for where our error was thrown (only available on V8)
-    if (Error.captureStackTrace) {
+    if (typeof Error.captureStackTrace === 'function') {
       Error.captureStackTrace(this, VerifactuError);
     }
   }

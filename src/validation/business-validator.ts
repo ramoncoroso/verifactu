@@ -5,8 +5,9 @@
  */
 
 import type { Invoice, InvoiceCancellation } from '../models/invoice.js';
-import type { TaxBreakdown, VatBreakdown } from '../models/tax.js';
+import type { TaxBreakdown } from '../models/tax.js';
 import { isValidSpanishTaxId, getSpanishTaxIdType } from './nif-validator.js';
+import { validateInvoice } from './schema-validator.js';
 
 /**
  * Business rule violation
@@ -403,11 +404,6 @@ export function validateInvoiceFull(invoice: Invoice): {
   businessErrors: BusinessViolation[];
   warnings: BusinessViolation[];
 } {
-  // Import inline to avoid circular dependency
-  const { validateInvoice } = require('./schema-validator.js') as {
-    validateInvoice: (invoice: Invoice) => import('./schema-validator.js').ValidationResult;
-  };
-
   const schemaResult = validateInvoice(invoice);
   const businessResult = validateInvoiceBusinessRules(invoice);
 

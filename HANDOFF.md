@@ -4,9 +4,9 @@
 
 Librería TypeScript **production-ready** para el sistema Verifactu de la AEAT. Zero-dependencies, compatible con Node.js 18+, Deno y Bun.
 
-## Estado: Fases 1-4 Completadas (15/17 tareas)
+## Estado: Proyecto Completado ✅
 
-### Completado ✅
+### Módulos Implementados
 
 | Módulo | Archivos | Descripción |
 |--------|----------|-------------|
@@ -19,11 +19,8 @@ Librería TypeScript **production-ready** para el sistema Verifactu de la AEAT. 
 | **QR** | `src/qr/*.ts` | Generator SVG, URL builder |
 | **Client** | `src/client/*.ts` | SOAP client, VerifactuClient |
 | **Builders** | `src/builders/*.ts` | InvoiceBuilder fluido |
-
-### Pendiente ⏳
-
-1. **Tests unitarios** (>90% coverage)
-2. **Documentación** (README, ejemplos)
+| **Tests** | `tests/unit/*.ts` | 490 tests, 94% coverage |
+| **Docs** | `README.md` | Documentación completa |
 
 ## API Principal
 
@@ -45,12 +42,14 @@ const invoice = InvoiceBuilder.create()
 const response = await client.submitInvoice(invoice);
 ```
 
-## Próximos Pasos
+## Uso
 
-1. `npm install` - Instalar dependencias
-2. `npm run build` - Verificar compilación
-3. Crear tests en `tests/unit/`
-4. Añadir README.md
+```bash
+npm install        # Instalar dependencias
+npm run build      # Compilar
+npm test           # Ejecutar tests
+npm run test:coverage  # Tests con cobertura
+```
 
 ## Recursos
 

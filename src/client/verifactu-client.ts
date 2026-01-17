@@ -13,9 +13,9 @@ import { RecordChain } from '../crypto/chain.js';
 import type { ChainState } from '../crypto/chain.js';
 import { SoapClient, createSoapClient } from './soap-client.js';
 import { getEndpoints, SOAP_ACTIONS, type Environment, type ServiceEndpoints } from './endpoints.js';
-import { AeatError, AeatRejectedError } from '../errors/network-errors.js';
-import { element, formatXmlDate, formatXmlDateTime, formatXmlNumber } from '../xml/builder.js';
-import { findNode, getChildText, getChildren, findAllNodes } from '../xml/parser.js';
+import { AeatError } from '../errors/network-errors.js';
+import { formatXmlDate, formatXmlDateTime, formatXmlNumber } from '../xml/builder.js';
+import { findNode, getChildText } from '../xml/parser.js';
 import type { XmlNode } from '../xml/parser.js';
 
 /**
@@ -93,7 +93,6 @@ export interface InvoiceStatusResponse {
  * - Querying invoice status
  */
 export class VerifactuClient {
-  private readonly config: VerifactuClientConfig;
   private readonly endpoints: ServiceEndpoints;
   private readonly certificateManager: CertificateManager;
   private readonly soapClient: SoapClient;
@@ -101,7 +100,6 @@ export class VerifactuClient {
   private readonly software: SoftwareInfo;
 
   constructor(config: VerifactuClientConfig) {
-    this.config = config;
     this.endpoints = getEndpoints(config.environment);
     this.certificateManager = createCertificateManager(config.certificate);
     this.soapClient = createSoapClient(
@@ -146,12 +144,9 @@ export class VerifactuClient {
     issuer: Issuer,
     reason?: string
   ): Promise<SubmitCancellationResponse> {
-    const cancellation: InvoiceCancellation = {
-      operationType: 'AN',
-      invoiceId,
-      issuer,
-      reason,
-    };
+    const cancellation: InvoiceCancellation = reason !== undefined
+      ? { operationType: 'AN', invoiceId, issuer, reason }
+      : { operationType: 'AN', invoiceId, issuer };
 
     const timestamp = new Date();
     const isFirst = this.chain.isFirstRecord();
@@ -459,14 +454,11 @@ export class VerifactuClient {
     const state = (estado as 'Correcto' | 'AceptadoConErrores' | 'Rechazado') ?? 'Rechazado';
     const accepted = state === 'Correcto' || state === 'AceptadoConErrores';
 
-    return {
-      accepted,
-      state,
-      csv,
-      errorCode: codigoError,
-      errorDescription: descripcionError,
-      invoice,
-    };
+    const response: SubmitInvoiceResponse = { accepted, state, invoice };
+    if (csv !== undefined) response.csv = csv;
+    if (codigoError !== undefined) response.errorCode = codigoError;
+    if (descripcionError !== undefined) response.errorDescription = descripcionError;
+    return response;
   }
 
   /**
@@ -489,14 +481,11 @@ export class VerifactuClient {
     const state = (estado as 'Correcto' | 'AceptadoConErrores' | 'Rechazado') ?? 'Rechazado';
     const accepted = state === 'Correcto' || state === 'AceptadoConErrores';
 
-    return {
-      accepted,
-      state,
-      csv,
-      errorCode: codigoError,
-      errorDescription: descripcionError,
-      cancellation,
-    };
+    const response: SubmitCancellationResponse = { accepted, state, cancellation };
+    if (csv !== undefined) response.csv = csv;
+    if (codigoError !== undefined) response.errorCode = codigoError;
+    if (descripcionError !== undefined) response.errorDescription = descripcionError;
+    return response;
   }
 
   /**
@@ -517,12 +506,11 @@ export class VerifactuClient {
     const csv = getChildText(registro, 'CSV');
     const fechaHora = getChildText(registro, 'FechaHoraRegistro');
 
-    return {
-      found: true,
-      state: estado,
-      csv,
-      registrationTimestamp: fechaHora ? new Date(fechaHora) : undefined,
-    };
+    const response: InvoiceStatusResponse = { found: true };
+    if (estado !== undefined) response.state = estado;
+    if (csv !== undefined) response.csv = csv;
+    if (fechaHora !== undefined) response.registrationTimestamp = new Date(fechaHora);
+    return response;
   }
 }
 

@@ -8,8 +8,8 @@ import { VerifactuError, ErrorCode, type ErrorContext } from './base-error.js';
  * Base class for cryptographic errors
  */
 export class CryptoError extends VerifactuError {
-  constructor(message: string, code: ErrorCode = ErrorCode.HASH_ERROR, context?: ErrorContext) {
-    super(message, code, { context });
+  constructor(message: string, code: ErrorCode = ErrorCode.HASH_ERROR, context?: ErrorContext, cause?: Error) {
+    super(message, code, { context, cause });
     this.name = 'CryptoError';
   }
 }
@@ -19,10 +19,7 @@ export class CryptoError extends VerifactuError {
  */
 export class HashError extends CryptoError {
   constructor(reason: string, cause?: Error) {
-    super(`Hash calculation failed: ${reason}`, ErrorCode.HASH_ERROR, {
-      context: { details: { reason } },
-      cause,
-    });
+    super(`Hash calculation failed: ${reason}`, ErrorCode.HASH_ERROR, { details: { reason } }, cause);
     this.name = 'HashError';
   }
 }
@@ -32,9 +29,7 @@ export class HashError extends CryptoError {
  */
 export class ChainError extends CryptoError {
   constructor(reason: string, details?: Record<string, unknown>) {
-    super(`Chain calculation failed: ${reason}`, ErrorCode.CHAIN_ERROR, {
-      context: { details },
-    });
+    super(`Chain calculation failed: ${reason}`, ErrorCode.CHAIN_ERROR, { details });
     this.name = 'ChainError';
   }
 }
@@ -44,7 +39,7 @@ export class ChainError extends CryptoError {
  */
 export class CertificateError extends CryptoError {
   constructor(message: string, code: ErrorCode = ErrorCode.CERTIFICATE_ERROR, context?: ErrorContext) {
-    super(message, code, { context });
+    super(message, code, context);
     this.name = 'CertificateError';
   }
 }
@@ -72,9 +67,7 @@ export class CertificateExpiredError extends CertificateError {
     super(
       `Certificate expired on ${expirationDate.toISOString()}`,
       ErrorCode.CERTIFICATE_EXPIRED,
-      {
-        details: { expirationDate: expirationDate.toISOString() },
-      }
+      { details: { expirationDate: expirationDate.toISOString() } }
     );
     this.name = 'CertificateExpiredError';
     this.expirationDate = expirationDate;
@@ -89,10 +82,7 @@ export class InvalidCertificateFormatError extends CertificateError {
     super(
       `Invalid certificate format: expected ${expected}, got ${format}`,
       ErrorCode.INVALID_CERTIFICATE_FORMAT,
-      {
-        value: format,
-        expected,
-      }
+      { value: format, expected }
     );
     this.name = 'InvalidCertificateFormatError';
   }
@@ -103,10 +93,7 @@ export class InvalidCertificateFormatError extends CertificateError {
  */
 export class SignatureError extends CryptoError {
   constructor(reason: string, cause?: Error) {
-    super(`Signature operation failed: ${reason}`, ErrorCode.SIGNATURE_ERROR, {
-      context: { details: { reason } },
-      cause,
-    });
+    super(`Signature operation failed: ${reason}`, ErrorCode.SIGNATURE_ERROR, { details: { reason } }, cause);
     this.name = 'SignatureError';
   }
 }

@@ -152,7 +152,7 @@ export class AeatRejectedError extends AeatError {
   constructor(
     aeatCode: string,
     aeatDescription: string,
-    details?: {
+    _details?: {
       registryId?: string;
       invoiceNumber?: string;
     }
@@ -175,7 +175,7 @@ export class AeatRejectedError extends AeatError {
  * AEAT service unavailable error
  */
 export class AeatServiceUnavailableError extends AeatError {
-  constructor(cause?: Error) {
+  constructor(_cause?: Error) {
     super('AEAT service is temporarily unavailable', ErrorCode.AEAT_SERVICE_UNAVAILABLE, {
       retry: {
         retryable: true,

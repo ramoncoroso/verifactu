@@ -6,11 +6,10 @@ import type {
   InvoiceType,
   RectifiedInvoiceType,
   OperationRegime,
-  OperationType,
   VatRate,
 } from './enums.js';
 import type { Issuer, Recipient, SoftwareInfo } from './party.js';
-import type { TaxBreakdown, TaxTotals } from './tax.js';
+import type { TaxBreakdown } from './tax.js';
 
 /**
  * Invoice identifier

@@ -6,7 +6,7 @@
 
 import type { InvoiceCancellation } from '../../models/invoice.js';
 import type { SoftwareInfo } from '../../models/party.js';
-import { element, formatXmlDate, formatXmlDateTime } from '../builder.js';
+import { element, formatXmlDate, formatXmlDateTime, serializeElement } from '../builder.js';
 import type { XmlElement } from '../builder.js';
 import { buildIssuerXml, buildSoftwareInfoXml, buildChainReferenceXml, buildFirstRecordChainXml } from './alta.js';
 
@@ -92,5 +92,5 @@ export function buildAnulacionSoapEnvelope(
         )
     );
 
-  return `<?xml version="1.0" encoding="UTF-8"?>${envelope.build().children.map(c => '').join('')}`;
+  return `<?xml version="1.0" encoding="UTF-8"?>${serializeElement(envelope.build())}`;
 }

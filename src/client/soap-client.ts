@@ -6,7 +6,8 @@
  */
 
 import { request } from 'node:https';
-import type { RequestOptions, IncomingMessage } from 'node:https';
+import type { RequestOptions } from 'node:https';
+import type { IncomingMessage } from 'node:http';
 import type { TlsOptions } from '../crypto/certificate.js';
 import {
   NetworkError,

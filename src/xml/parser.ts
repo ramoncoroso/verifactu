@@ -163,8 +163,7 @@ function parseElement(xml: string, startIndex: number): ParseResult {
   let textContent = '';
 
   while (pos < xml.length) {
-    // Skip whitespace (but preserve for text)
-    const wsStart = pos;
+    // Skip whitespace
     while (pos < xml.length && /\s/.test(xml[pos] ?? '') && xml[pos] !== '<') {
       pos++;
     }

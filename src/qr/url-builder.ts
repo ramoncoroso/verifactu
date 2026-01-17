@@ -7,7 +7,7 @@
 import type { Invoice } from '../models/invoice.js';
 import type { Environment } from '../client/endpoints.js';
 import { getQrVerificationUrl } from '../client/endpoints.js';
-import { formatXmlDate, formatXmlNumber } from '../xml/builder.js';
+import { formatXmlNumber } from '../xml/builder.js';
 
 /**
  * QR URL parameters according to AEAT specification

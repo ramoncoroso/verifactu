@@ -25,12 +25,21 @@ import { createVatBreakdown, calculateTaxTotals, roundToTwoDecimals } from '../m
 import { ValidationError, MissingFieldError } from '../errors/validation-errors.js';
 
 /**
+ * Mutable invoice ID for builder
+ */
+interface MutableInvoiceId {
+  series?: string;
+  number?: string;
+  issueDate?: Date;
+}
+
+/**
  * Builder state for tracking what's been set
  */
 interface BuilderState {
   issuer?: Issuer;
   invoiceType?: InvoiceType;
-  id?: Partial<InvoiceId>;
+  id: MutableInvoiceId;
   recipients: Recipient[];
   description?: string;
   operationRegimes: OperationRegime[];
@@ -48,6 +57,7 @@ interface BuilderState {
  */
 export class InvoiceBuilder {
   private state: BuilderState = {
+    id: {},
     recipients: [],
     operationRegimes: [],
     vatBreakdowns: [],
@@ -116,9 +126,6 @@ export class InvoiceBuilder {
    * Set invoice series
    */
   series(series: string): this {
-    if (!this.state.id) {
-      this.state.id = {};
-    }
     this.state.id.series = series;
     return this;
   }
@@ -127,9 +134,6 @@ export class InvoiceBuilder {
    * Set invoice number
    */
   number(number: string): this {
-    if (!this.state.id) {
-      this.state.id = {};
-    }
     this.state.id.number = number;
     return this;
   }
@@ -138,9 +142,6 @@ export class InvoiceBuilder {
    * Set issue date
    */
   issueDate(date: Date): this {
-    if (!this.state.id) {
-      this.state.id = {};
-    }
     this.state.id.issueDate = date;
     return this;
   }
@@ -253,13 +254,12 @@ export class InvoiceBuilder {
    * Add a rectified invoice reference
    */
   rectifies(issuerNif: string, number: string, issueDate: Date, series?: string): this {
+    const invoiceId: InvoiceId = series !== undefined
+      ? { series, number, issueDate }
+      : { number, issueDate };
     this.state.rectifiedInvoices.push({
       issuerTaxId: issuerNif,
-      invoiceId: {
-        series,
-        number,
-        issueDate,
-      },
+      invoiceId,
     });
     return this;
   }
@@ -329,14 +329,22 @@ export class InvoiceBuilder {
     }
 
     // Build tax breakdown
-    const taxBreakdown: TaxBreakdown = {
-      vatBreakdowns:
-        this.state.vatBreakdowns.length > 0 ? this.state.vatBreakdowns : undefined,
-      exemptBreakdowns:
-        this.state.exemptBreakdowns.length > 0 ? this.state.exemptBreakdowns : undefined,
-      nonSubjectBreakdowns:
-        this.state.nonSubjectBreakdowns.length > 0 ? this.state.nonSubjectBreakdowns : undefined,
-    };
+    const taxBreakdown: TaxBreakdown =
+      this.state.vatBreakdowns.length > 0 && this.state.exemptBreakdowns.length > 0 && this.state.nonSubjectBreakdowns.length > 0
+        ? { vatBreakdowns: this.state.vatBreakdowns, exemptBreakdowns: this.state.exemptBreakdowns, nonSubjectBreakdowns: this.state.nonSubjectBreakdowns }
+        : this.state.vatBreakdowns.length > 0 && this.state.exemptBreakdowns.length > 0
+          ? { vatBreakdowns: this.state.vatBreakdowns, exemptBreakdowns: this.state.exemptBreakdowns }
+          : this.state.vatBreakdowns.length > 0 && this.state.nonSubjectBreakdowns.length > 0
+            ? { vatBreakdowns: this.state.vatBreakdowns, nonSubjectBreakdowns: this.state.nonSubjectBreakdowns }
+            : this.state.exemptBreakdowns.length > 0 && this.state.nonSubjectBreakdowns.length > 0
+              ? { exemptBreakdowns: this.state.exemptBreakdowns, nonSubjectBreakdowns: this.state.nonSubjectBreakdowns }
+              : this.state.vatBreakdowns.length > 0
+                ? { vatBreakdowns: this.state.vatBreakdowns }
+                : this.state.exemptBreakdowns.length > 0
+                  ? { exemptBreakdowns: this.state.exemptBreakdowns }
+                  : this.state.nonSubjectBreakdowns.length > 0
+                    ? { nonSubjectBreakdowns: this.state.nonSubjectBreakdowns }
+                    : {};
 
     // Validate we have at least one breakdown type
     if (
@@ -350,27 +358,41 @@ export class InvoiceBuilder {
     // Calculate totals
     const totals = calculateTaxTotals(taxBreakdown);
 
+    // Build invoice ID
+    const invoiceId: InvoiceId = this.state.id.series !== undefined
+      ? { series: this.state.id.series, number: this.state.id.number, issueDate: this.state.id.issueDate }
+      : { number: this.state.id.number, issueDate: this.state.id.issueDate };
+
     // Build the invoice
     const invoice: Invoice = {
       operationType: 'A',
       invoiceType: this.state.invoiceType,
-      id: {
-        series: this.state.id.series,
-        number: this.state.id.number,
-        issueDate: this.state.id.issueDate,
-      },
+      id: invoiceId,
       issuer: this.state.issuer,
-      recipients: this.state.recipients.length > 0 ? this.state.recipients : undefined,
-      description: this.state.description,
       operationRegimes: this.state.operationRegimes,
       taxBreakdown,
       totalAmount: totals.grandTotal,
-      lines: this.state.lines.length > 0 ? this.state.lines : undefined,
-      rectifiedInvoiceType: this.state.rectifiedInvoiceType,
-      rectifiedInvoices:
-        this.state.rectifiedInvoices.length > 0 ? this.state.rectifiedInvoices : undefined,
-      softwareInfo: this.state.softwareInfo,
     };
+
+    // Add optional fields
+    if (this.state.recipients.length > 0) {
+      (invoice as { recipients?: readonly Recipient[] }).recipients = this.state.recipients;
+    }
+    if (this.state.description !== undefined) {
+      (invoice as { description?: string }).description = this.state.description;
+    }
+    if (this.state.lines.length > 0) {
+      (invoice as { lines?: readonly InvoiceLine[] }).lines = this.state.lines;
+    }
+    if (this.state.rectifiedInvoiceType !== undefined) {
+      (invoice as { rectifiedInvoiceType?: RectifiedInvoiceType }).rectifiedInvoiceType = this.state.rectifiedInvoiceType;
+    }
+    if (this.state.rectifiedInvoices.length > 0) {
+      (invoice as { rectifiedInvoices?: readonly InvoiceReference[] }).rectifiedInvoices = this.state.rectifiedInvoices;
+    }
+    if (this.state.softwareInfo !== undefined) {
+      (invoice as { softwareInfo?: SoftwareInfo }).softwareInfo = this.state.softwareInfo;
+    }
 
     return invoice;
   }
@@ -380,6 +402,7 @@ export class InvoiceBuilder {
    */
   reset(): this {
     this.state = {
+      id: {},
       recipients: [],
       operationRegimes: [],
       vatBreakdowns: [],

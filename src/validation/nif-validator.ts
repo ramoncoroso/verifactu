@@ -119,7 +119,7 @@ function validateNie(normalized: string): NifValidationResult {
 /**
  * Calculate CIF control digit/letter
  */
-function calculateCifControl(prefix: string, digits: string): { digit: number; letter: string } {
+function calculateCifControl(_prefix: string, digits: string): { digit: number; letter: string } {
   // CIF algorithm: sum of even positions + sum of (double odd positions, if >9 sum digits)
   let sumA = 0; // Sum of digits in even positions (2, 4, 6)
   let sumB = 0; // Sum of doubled digits in odd positions (1, 3, 5, 7)

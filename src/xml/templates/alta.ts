@@ -7,7 +7,7 @@
 import type { Invoice } from '../../models/invoice.js';
 import type { Issuer, Recipient, SoftwareInfo } from '../../models/party.js';
 import type { TaxBreakdown, VatBreakdown, ExemptBreakdown, NonSubjectBreakdown } from '../../models/tax.js';
-import { element, formatXmlDate, formatXmlDateTime, formatXmlNumber } from '../builder.js';
+import { element, formatXmlDate, formatXmlDateTime, formatXmlNumber, serializeElement } from '../builder.js';
 import type { XmlElement } from '../builder.js';
 
 /**
@@ -303,5 +303,5 @@ export function buildAltaSoapEnvelope(
         )
     );
 
-  return `<?xml version="1.0" encoding="UTF-8"?>${envelope.build().children.map(c => '').join('')}`;
+  return `<?xml version="1.0" encoding="UTF-8"?>${serializeElement(envelope.build())}`;
 }
