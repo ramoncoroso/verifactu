@@ -39,6 +39,27 @@ const DEFAULT_RETRY_OPTIONS: Required<Omit<RetryOptions, 'isRetryable' | 'onRetr
 };
 
 /**
+ * Validate retry options and return sanitized values
+ */
+function validateAndSanitizeOptions(options: RetryOptions): Required<Omit<RetryOptions, 'isRetryable' | 'onRetry'>> & Pick<RetryOptions, 'isRetryable' | 'onRetry'> {
+  const maxRetries = Math.max(0, Math.floor(options.maxRetries ?? DEFAULT_RETRY_OPTIONS.maxRetries));
+  const initialDelayMs = Math.max(0, options.initialDelayMs ?? DEFAULT_RETRY_OPTIONS.initialDelayMs);
+  const maxDelayMs = Math.max(initialDelayMs, options.maxDelayMs ?? DEFAULT_RETRY_OPTIONS.maxDelayMs);
+  const backoffMultiplier = Math.max(1, options.backoffMultiplier ?? DEFAULT_RETRY_OPTIONS.backoffMultiplier);
+  const jitterFactor = Math.max(0, Math.min(1, options.jitterFactor ?? DEFAULT_RETRY_OPTIONS.jitterFactor));
+
+  return {
+    maxRetries,
+    initialDelayMs,
+    maxDelayMs,
+    backoffMultiplier,
+    jitterFactor,
+    isRetryable: options.isRetryable,
+    onRetry: options.onRetry,
+  };
+}
+
+/**
  * Calculate delay with exponential backoff and jitter
  */
 export function calculateBackoffDelay(
@@ -52,15 +73,22 @@ export function calculateBackoffDelay(
     jitterFactor = DEFAULT_RETRY_OPTIONS.jitterFactor,
   } = options;
 
+  // Sanitize inputs to prevent negative or invalid values
+  const safeInitialDelay = Math.max(0, initialDelayMs);
+  const safeMaxDelay = Math.max(safeInitialDelay, maxDelayMs);
+  const safeMultiplier = Math.max(1, backoffMultiplier);
+  const safeJitter = Math.max(0, Math.min(1, jitterFactor));
+  const safeAttempt = Math.max(0, Math.floor(attempt));
+
   // Calculate base delay with exponential backoff
-  const baseDelay = initialDelayMs * Math.pow(backoffMultiplier, attempt);
+  const baseDelay = safeInitialDelay * Math.pow(safeMultiplier, safeAttempt);
 
   // Add jitter
-  const jitter = baseDelay * jitterFactor * (Math.random() * 2 - 1);
+  const jitter = baseDelay * safeJitter * (Math.random() * 2 - 1);
   const delayWithJitter = baseDelay + jitter;
 
   // Clamp to max delay
-  return Math.min(delayWithJitter, maxDelayMs);
+  return Math.min(Math.max(0, delayWithJitter), safeMaxDelay);
 }
 
 /**
@@ -117,11 +145,13 @@ export async function withRetry<T>(
   operation: () => Promise<T>,
   options: RetryOptions = {}
 ): Promise<T> {
+  // Validate and sanitize options
+  const sanitized = validateAndSanitizeOptions(options);
   const {
-    maxRetries = DEFAULT_RETRY_OPTIONS.maxRetries,
+    maxRetries,
     isRetryable = isRetryableError,
     onRetry,
-  } = options;
+  } = sanitized;
 
   let lastError: unknown;
 
@@ -141,11 +171,11 @@ export async function withRetry<T>(
       let delayMs: number;
 
       if (retryInfo?.retryAfterMs !== undefined) {
-        // Use error's suggested delay
-        delayMs = retryInfo.retryAfterMs;
+        // Use error's suggested delay (but ensure it's non-negative)
+        delayMs = Math.max(0, retryInfo.retryAfterMs);
       } else {
         // Calculate exponential backoff
-        delayMs = calculateBackoffDelay(attempt, options);
+        delayMs = calculateBackoffDelay(attempt, sanitized);
       }
 
       // Notify callback if provided

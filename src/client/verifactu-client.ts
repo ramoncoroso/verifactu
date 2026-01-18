@@ -99,7 +99,7 @@ export class VerifactuClient {
   private readonly endpoints: ServiceEndpoints;
   private readonly certificateManager: CertificateManager;
   private readonly soapClient: SoapClient;
-  private readonly chain: RecordChain;
+  private chain: RecordChain; // Not readonly - needs to be restored on retry
   private readonly software: SoftwareInfo;
   private readonly retryOptions?: RetryOptions;
 
@@ -200,6 +200,10 @@ export class VerifactuClient {
    * Uses exponential backoff with jitter for retryable errors.
    * Respects error-specific retry information when available.
    *
+   * IMPORTANT: This method safely handles chain state on retry failures.
+   * The chain state is restored before each retry attempt to prevent
+   * chain corruption from duplicate record entries.
+   *
    * @param invoice - The invoice to submit
    * @param options - Optional retry options (overrides client defaults)
    */
@@ -208,7 +212,23 @@ export class VerifactuClient {
     options?: RetryOptions
   ): Promise<SubmitInvoiceResponse> {
     const retryOpts = { ...this.retryOptions, ...options };
-    return withRetry(() => this.submitInvoice(invoice), retryOpts);
+
+    // Save chain state before operation to restore on retry
+    const savedChainState = this.chain.getState();
+
+    return withRetry(
+      () => this.submitInvoice(invoice),
+      {
+        ...retryOpts,
+        onRetry: (attempt, error, delayMs) => {
+          // Restore chain state before retry to prevent duplicate entries
+          this.chain = RecordChain.fromState(savedChainState);
+
+          // Call user's onRetry callback if provided
+          retryOpts.onRetry?.(attempt, error, delayMs);
+        },
+      }
+    );
   }
 
   /**
@@ -216,6 +236,10 @@ export class VerifactuClient {
    *
    * Uses exponential backoff with jitter for retryable errors.
    * Respects error-specific retry information when available.
+   *
+   * IMPORTANT: This method safely handles chain state on retry failures.
+   * The chain state is restored before each retry attempt to prevent
+   * chain corruption from duplicate record entries.
    *
    * @param invoiceId - The invoice ID to cancel
    * @param issuer - The invoice issuer
@@ -229,7 +253,23 @@ export class VerifactuClient {
     options?: RetryOptions
   ): Promise<SubmitCancellationResponse> {
     const retryOpts = { ...this.retryOptions, ...options };
-    return withRetry(() => this.cancelInvoice(invoiceId, issuer, reason), retryOpts);
+
+    // Save chain state before operation to restore on retry
+    const savedChainState = this.chain.getState();
+
+    return withRetry(
+      () => this.cancelInvoice(invoiceId, issuer, reason),
+      {
+        ...retryOpts,
+        onRetry: (attempt, error, delayMs) => {
+          // Restore chain state before retry to prevent duplicate entries
+          this.chain = RecordChain.fromState(savedChainState);
+
+          // Call user's onRetry callback if provided
+          retryOpts.onRetry?.(attempt, error, delayMs);
+        },
+      }
+    );
   }
 
   /**
@@ -237,6 +277,9 @@ export class VerifactuClient {
    *
    * Uses exponential backoff with jitter for retryable errors.
    * Respects error-specific retry information when available.
+   *
+   * Note: This operation is read-only and does not modify chain state,
+   * so it can be safely retried without any state management.
    *
    * @param invoiceId - The invoice ID to check
    * @param issuerNif - The issuer's NIF

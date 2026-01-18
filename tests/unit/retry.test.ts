@@ -387,6 +387,83 @@ describe('Retry Utility', () => {
     });
   });
 
+  describe('Input validation', () => {
+    it('should handle negative maxRetries by treating as 0', async () => {
+      const operation = vi.fn().mockRejectedValue(new NetworkError('Fail'));
+
+      await expect(withRetry(operation, { maxRetries: -5 })).rejects.toThrow('Fail');
+      expect(operation).toHaveBeenCalledTimes(1); // No retries
+    });
+
+    it('should handle negative initialDelayMs by treating as 0', async () => {
+      const operation = vi
+        .fn()
+        .mockRejectedValueOnce(new NetworkError('Fail'))
+        .mockResolvedValue('success');
+
+      const result = await withRetry(operation, {
+        initialDelayMs: -1000,
+        maxRetries: 1,
+        jitterFactor: 0,
+      });
+
+      expect(result).toBe('success');
+    });
+
+    it('should handle jitterFactor > 1 by clamping to 1', () => {
+      const delay = calculateBackoffDelay(0, {
+        initialDelayMs: 1000,
+        jitterFactor: 5, // Should be clamped to 1
+      });
+
+      // With jitter clamped to 1, delay should be between 0 and 2000
+      expect(delay).toBeGreaterThanOrEqual(0);
+      expect(delay).toBeLessThanOrEqual(2000);
+    });
+
+    it('should handle negative jitterFactor by treating as 0', () => {
+      const delay = calculateBackoffDelay(0, {
+        initialDelayMs: 1000,
+        jitterFactor: -0.5, // Should be treated as 0
+      });
+
+      expect(delay).toBe(1000); // No jitter
+    });
+
+    it('should handle backoffMultiplier < 1 by treating as 1', () => {
+      const delay = calculateBackoffDelay(2, {
+        initialDelayMs: 1000,
+        backoffMultiplier: 0.5, // Should be treated as 1
+        jitterFactor: 0,
+      });
+
+      expect(delay).toBe(1000); // No exponential growth
+    });
+
+    it('should handle non-integer maxRetries by flooring', async () => {
+      const operation = vi.fn().mockRejectedValue(new NetworkError('Fail'));
+
+      await expect(
+        withRetry(operation, {
+          maxRetries: 2.9, // Should be treated as 2
+          initialDelayMs: 1,
+          jitterFactor: 0,
+        })
+      ).rejects.toThrow('Fail');
+
+      expect(operation).toHaveBeenCalledTimes(3); // Initial + 2 retries
+    });
+
+    it('should handle negative attempt in calculateBackoffDelay', () => {
+      const delay = calculateBackoffDelay(-5, {
+        initialDelayMs: 1000,
+        jitterFactor: 0,
+      });
+
+      expect(delay).toBe(1000); // Treated as attempt 0
+    });
+  });
+
   describe('Edge cases', () => {
     it('should handle maxRetries = 0', async () => {
       const operation = vi.fn().mockRejectedValue(new NetworkError('Fail'));
