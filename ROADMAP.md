@@ -113,6 +113,225 @@ Formato: `<type>(<scope>): <description>`
 
 ---
 
+## Sprint Futuro 3: Logger Inyectable y Observabilidad
+
+**Prioridad:** Media
+**Impacto:** Medio
+**Esfuerzo:** Bajo
+
+### Descripción
+
+Implementar un sistema de logging configurable que permita a los usuarios inyectar su propio logger sin añadir dependencias. No incluir telemetría por defecto, pero documentar cómo extenderlo.
+
+### Tareas
+
+- [ ] Definir interfaz `Logger` con métodos `debug`, `info`, `warn`, `error`
+- [ ] Añadir opción `logger` a `VerifactuClientConfig`
+- [ ] Implementar logger noop por defecto (sin output)
+- [ ] Añadir logs en puntos clave: peticiones, respuestas, errores, reintentos
+- [ ] Documentar integración con winston, pino, etc.
+- [ ] Documentar cómo añadir métricas Prometheus externamente
+- [ ] Añadir tests para logging
+
+### Ejemplo de API propuesta
+
+```typescript
+// Interfaz del logger
+interface Logger {
+  debug(message: string, meta?: Record<string, unknown>): void;
+  info(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+}
+
+// Uso con console
+const client = new VerifactuClient({
+  // ...config
+  logger: {
+    debug: (msg, meta) => console.debug(`[DEBUG] ${msg}`, meta),
+    info: (msg, meta) => console.info(`[INFO] ${msg}`, meta),
+    warn: (msg, meta) => console.warn(`[WARN] ${msg}`, meta),
+    error: (msg, meta) => console.error(`[ERROR] ${msg}`, meta),
+  },
+});
+
+// Uso con pino
+import pino from 'pino';
+const pinoLogger = pino();
+
+const client = new VerifactuClient({
+  // ...config
+  logger: pinoLogger,
+});
+```
+
+### Puntos de logging sugeridos
+
+| Nivel | Evento |
+|-------|--------|
+| `debug` | Request/response XML (sanitizado) |
+| `info` | Factura enviada, cancelada, consultada |
+| `warn` | Retry iniciado, timeout cercano |
+| `error` | Error de red, error AEAT, validación fallida |
+
+### Notas
+
+- NO incluir telemetría ni tracking por defecto
+- Mantener zero-dependencies
+- El logger debe ser opcional (noop por defecto)
+
+---
+
+## Sprint Futuro 4: Developer Experience (Local Dev)
+
+**Prioridad:** Baja
+**Impacto:** Medio
+**Esfuerzo:** Bajo
+
+### Descripción
+
+Mejorar la experiencia de desarrollo local con scripts de utilidad y configuración de entorno reproducible.
+
+### Tareas
+
+- [ ] Crear script `scripts/generate-test-cert.sh` para generar certificado self-signed
+- [ ] Crear `.devcontainer/devcontainer.json` para GitHub Codespaces / VSCode
+- [ ] Añadir `docker-compose.yml` opcional para desarrollo
+- [ ] Crear archivo `.env.example` con variables de entorno documentadas
+- [ ] Documentar setup local en README o CONTRIBUTING.md
+
+### Script de certificado de prueba
+
+```bash
+#!/bin/bash
+# scripts/generate-test-cert.sh
+
+openssl req -x509 -newkey rsa:4096 \
+  -keyout test-key.pem \
+  -out test-cert.pem \
+  -days 365 \
+  -nodes \
+  -subj "/CN=localhost/O=Test/C=ES"
+
+openssl pkcs12 -export \
+  -out test-cert.pfx \
+  -inkey test-key.pem \
+  -in test-cert.pem \
+  -passout pass:test-password
+
+echo "Certificado de prueba generado: test-cert.pfx (password: test-password)"
+```
+
+### devcontainer.json
+
+```json
+{
+  "name": "Verifactu Dev",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "postCreateCommand": "npm install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}
+```
+
+### .env.example
+
+```bash
+# Entorno (sandbox | production)
+VERIFACTU_ENV=sandbox
+
+# Certificado
+CERT_PATH=./certs/certificate.pfx
+CERT_PASSWORD=your-password
+# O en base64 para cloud
+# CERT_BASE64=base64-encoded-certificate
+
+# Software
+DEVELOPER_TAX_ID=B12345678
+SOFTWARE_NAME=Mi Aplicación
+SOFTWARE_VERSION=1.0.0
+```
+
+---
+
+## Sprint Futuro 5: Comunidad y Accesibilidad
+
+**Prioridad:** Media
+**Impacto:** Alto (para adopción)
+**Esfuerzo:** Medio
+
+### Descripción
+
+Preparar el proyecto para contribuciones de la comunidad y ampliar la audiencia con documentación en inglés.
+
+### Tareas
+
+- [ ] Crear `README.en.md` (traducción al inglés)
+- [ ] Actualizar README.md con link a versión inglesa
+- [ ] Crear `CODE_OF_CONDUCT.md` (Contributor Covenant)
+- [ ] Crear `CONTRIBUTING.md` con guía de contribución
+- [ ] Crear `.github/ISSUE_TEMPLATE/bug_report.md`
+- [ ] Crear `.github/ISSUE_TEMPLATE/feature_request.md`
+- [ ] Crear `.github/PULL_REQUEST_TEMPLATE.md`
+- [ ] Configurar labels en GitHub (good first issue, help wanted, etc.)
+
+### CODE_OF_CONDUCT.md
+
+Usar [Contributor Covenant](https://www.contributor-covenant.org/) versión 2.1.
+
+### CONTRIBUTING.md (estructura)
+
+```markdown
+# Contribuir a Verifactu
+
+## Código de Conducta
+## Cómo Reportar Bugs
+## Cómo Sugerir Mejoras
+## Proceso de Pull Request
+## Guía de Estilo
+## Conventional Commits
+## Configuración del Entorno de Desarrollo
+## Tests
+## Preguntas
+```
+
+### Issue Templates
+
+**Bug Report:**
+- Descripción del bug
+- Pasos para reproducir
+- Comportamiento esperado
+- Entorno (Node version, OS)
+- Logs/Screenshots
+
+**Feature Request:**
+- Descripción de la funcionalidad
+- Caso de uso
+- Alternativas consideradas
+- Contexto adicional
+
+### Labels sugeridos
+
+| Label | Descripción | Color |
+|-------|-------------|-------|
+| `good first issue` | Bueno para nuevos contribuidores | #7057ff |
+| `help wanted` | Se necesita ayuda | #008672 |
+| `bug` | Algo no funciona | #d73a4a |
+| `enhancement` | Nueva funcionalidad | #a2eeef |
+| `documentation` | Mejoras de docs | #0075ca |
+| `question` | Pregunta | #d876e3 |
+
+---
+
 ## Historial de Sprints Completados
 
 ### Sprint 1: CI/CD y Calidad (Completado)
