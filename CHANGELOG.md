@@ -1,3 +1,25 @@
+## 1.0.0 (2026-01-18)
+
+
+### Features
+
+* Add CI/CD, automatic retry, and documentation improvements ([a2b0769](https://github.com/ramoncoroso/verifactu/commit/a2b0769fab9bd262a3a57b7c316635b75625bf25))
+* Add comprehensive test suite with 97.74% coverage ([af0e9be](https://github.com/ramoncoroso/verifactu/commit/af0e9be2442378bbad88039a764ecdf76c8ef222))
+* Add concurrency limiting for AEAT requests ([cb02fb9](https://github.com/ramoncoroso/verifactu/commit/cb02fb9080aaf0c431f237442f779d18782481e0))
+* Add logger interface and developer experience improvements ([dd24e6a](https://github.com/ramoncoroso/verifactu/commit/dd24e6a2b55b88b3af5bf86929f81981e3bfc73b))
+* Add semantic-release for automated versioning and publishing ([0db3a23](https://github.com/ramoncoroso/verifactu/commit/0db3a230e0b530f3d5536462224178eb7ea00f45))
+* Improve security documentation and add Buffer support for certificates ([7eebf87](https://github.com/ramoncoroso/verifactu/commit/7eebf87cf8f5a8729a39f8fb510cc80bcaf0070f))
+* Initial implementation of Verifactu TypeScript library ([1a16096](https://github.com/ramoncoroso/verifactu/commit/1a16096b7d29f4c5b4827451eecb15d1ef7e3fb0))
+
+
+### Bug Fixes
+
+* Address code review issues for security and correctness ([289ebc8](https://github.com/ramoncoroso/verifactu/commit/289ebc86e4e3286eb27b408dcb8697ef2e28e713))
+* change npm audit level from high to critical ([44bce0b](https://github.com/ramoncoroso/verifactu/commit/44bce0be910b6611246dd4879982f0caf5ba7518))
+* disable body-max-line-length for semantic-release commits ([2f752a4](https://github.com/ramoncoroso/verifactu/commit/2f752a450ef86c443ea9193ab075eaaa856a6ed3))
+* Resolve ESLint errors in verifactu-client and logger ([01d09de](https://github.com/ramoncoroso/verifactu/commit/01d09de8046888036b2e61f9fb26e4a64bf7a7cc))
+* update package-lock.json for semantic-release dependencies ([cc9968e](https://github.com/ramoncoroso/verifactu/commit/cc9968e229f9b0cfe2cc88531f7514f33e3b8866))
+
 # Changelog
 
 All notable changes to this project will be documented in this file.

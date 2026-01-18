@@ -1,6 +1,6 @@
 {
   "name": "verifactu",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Production-ready TypeScript library for Spanish AEAT Verifactu invoice verification system",
   "keywords": [
     "verifactu",
