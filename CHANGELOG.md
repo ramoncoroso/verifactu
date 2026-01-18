@@ -62,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `.devcontainer/devcontainer.json` - GitHub Codespaces / VSCode Dev Containers
   - `.env.example` - Documented environment variables template
 
+- **Automated Releases with semantic-release**
+  - Automatic version bumping based on conventional commits
+  - Automatic changelog generation
+  - Automatic npm publishing on merge to master
+  - Automatic GitHub releases with release notes
+  - Commitlint + Husky for commit message validation
+
 ## [0.1.0] - 2024-01-XX
 
 ### Added

@@ -4,75 +4,19 @@ Mejoras planificadas para futuras versiones de Verifactu.
 
 ---
 
-## Sprint Futuro: Releases Automáticos (semantic-release)
+## Requisito Pendiente: Configurar NPM_TOKEN
 
-**Prioridad:** Media
-**Impacto:** Alto
-**Esfuerzo:** Bajo
+Para activar la publicación automática a npm, configura el secreto `NPM_TOKEN` en GitHub:
 
-### Descripción
+1. Genera un token en [npmjs.com](https://www.npmjs.com/) > Access Tokens > Generate New Token (Automation)
+2. Ve a GitHub > Settings > Secrets and variables > Actions
+3. Añade un nuevo secreto llamado `NPM_TOKEN` con el valor del token
 
-Configurar semantic-release para automatizar el versionado, generación de changelog y publicación a npm basándose en conventional commits.
-
-### Tareas
-
-- [ ] Configurar commitlint para validar formato de commits
-- [ ] Crear `.github/workflows/release.yml`
-- [ ] Configurar semantic-release en `package.json`
-- [ ] Configurar token npm en GitHub Secrets (`NPM_TOKEN`)
-- [ ] Actualizar CONTRIBUTING.md con guía de conventional commits
-- [ ] Probar flujo completo en rama de prueba
-
-### Archivos a crear/modificar
-
-1. `.github/workflows/release.yml`
-2. `.releaserc.json` o config en `package.json`
-3. `commitlint.config.js`
-4. `CONTRIBUTING.md`
-
-### Ejemplo de workflow
-
-```yaml
-name: Release
-on:
-  push:
-    branches: [master]
-jobs:
-  release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
-      - name: Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npx semantic-release
-```
-
-### Requisitos previos
-
-- Cuenta npm con acceso de publicación
-- Token npm configurado en GitHub Secrets
-- Decisión sobre rama principal (master/main)
-- Adoptar conventional commits en el equipo
-
-### Conventional Commits
-
-Formato: `<type>(<scope>): <description>`
-
-| Tipo | Descripción | Versión |
-|------|-------------|---------|
-| `feat` | Nueva funcionalidad | MINOR |
-| `fix` | Corrección de bug | PATCH |
-| `docs` | Solo documentación | - |
-| `chore` | Mantenimiento | - |
-| `BREAKING CHANGE` | Cambio incompatible | MAJOR |
+Una vez configurado, cada push a `master` con commits convencionales disparará automáticamente:
+- Bump de versión según tipo de commit
+- Generación de changelog
+- Publicación a npm
+- Creación de GitHub Release
 
 ---
 
@@ -123,3 +67,11 @@ Formato: `<type>(<scope>): <description>`
 - `scripts/generate-test-cert.sh` para certificados de prueba
 - `.devcontainer/devcontainer.json` para Codespaces/VSCode
 - `.env.example` con variables documentadas
+
+### Sprint 8: Releases Automáticos (Completado)
+- `semantic-release` configurado para publicación automática
+- `commitlint` + `husky` para validar mensajes de commit
+- `.github/workflows/release.yml` para CI/CD de releases
+- `.releaserc.json` con configuración de plugins
+- Generación automática de changelog
+- Publicación automática a npm (requiere NPM_TOKEN)

@@ -111,7 +111,11 @@ src/
 
 ## Conventional Commits
 
-Usamos [Conventional Commits](https://www.conventionalcommits.org/) para los mensajes de commit:
+Usamos [Conventional Commits](https://www.conventionalcommits.org/) para los mensajes de commit. Los commits son validados automáticamente por **commitlint** a través de **husky**.
+
+> **Nota**: Al hacer `npm install`, se configura automáticamente el hook de git que valida los mensajes de commit.
+
+### Formato
 
 ```
 <tipo>(<alcance>): <descripción>
