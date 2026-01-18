@@ -93,6 +93,7 @@ const client = new VerifactuClient(config);
 | `retry?` | `RetryOptions` | Retry configuration |
 | `maxConcurrency?` | `number` | Maximum concurrent requests (default: unlimited) |
 | `queueTimeout?` | `number` | Queue wait timeout in ms (default: 30000) |
+| `logger?` | `Logger` | Logger for debugging (default: noop) |
 
 #### Methods
 
@@ -451,6 +452,57 @@ try {
     console.log('Queue length:', error.queueLength);
   }
 }
+```
+
+## Injectable Logger
+
+The library allows injecting a custom logger for debugging and monitoring:
+
+```typescript
+import { VerifactuClient, consoleLogger } from 'verifactu';
+
+// Use the included console logger
+const client = new VerifactuClient({
+  ...config,
+  logger: consoleLogger,
+});
+
+// Or use pino/winston
+import pino from 'pino';
+
+const client = new VerifactuClient({
+  ...config,
+  logger: pino(),
+});
+
+// Or a custom logger
+const client = new VerifactuClient({
+  ...config,
+  logger: {
+    debug: (msg, meta) => myLogger.debug(msg, meta),
+    info: (msg, meta) => myLogger.info(msg, meta),
+    warn: (msg, meta) => myLogger.warn(msg, meta),
+    error: (msg, meta) => myLogger.error(msg, meta),
+  },
+});
+```
+
+### Logged Events
+
+| Level | Event |
+|-------|-------|
+| `debug` | Request/response XML (sanitized) |
+| `info` | Invoice submitted, cancelled, queried |
+| `warn` | Retry initiated, AEAT rejection |
+| `error` | Network error, timeout, validation |
+
+### Filter by Level
+
+```typescript
+import { createLevelFilteredLogger, consoleLogger } from 'verifactu';
+
+// Only show warn and error
+const logger = createLevelFilteredLogger(consoleLogger, 'warn');
 ```
 
 ## Advanced Examples

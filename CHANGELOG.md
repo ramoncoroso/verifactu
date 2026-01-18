@@ -49,6 +49,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `QueueTimeoutError` - Thrown when queue timeout exceeded
   - Semaphore-based implementation with zero dependencies
 
+- **Injectable Logger**: Structured logging for debugging and monitoring
+  - `Logger` interface compatible with pino, winston, console
+  - `noopLogger` - Default silent logger (zero overhead)
+  - `consoleLogger` - Simple console logger with prefixes
+  - `createLevelFilteredLogger()` - Filter logs by level
+  - `sanitizeXmlForLogging()` - Remove sensitive data from XML
+  - Logs at key points: requests, responses, errors, retries
+
+- **Developer Experience**
+  - `scripts/generate-test-cert.sh` - Generate self-signed test certificates
+  - `.devcontainer/devcontainer.json` - GitHub Codespaces / VSCode Dev Containers
+  - `.env.example` - Documented environment variables template
+
 ## [0.1.0] - 2024-01-XX
 
 ### Added
