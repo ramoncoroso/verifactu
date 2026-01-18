@@ -2,6 +2,8 @@
 
 Librería TypeScript **production-ready** para integrar con el sistema **Verifactu de la AEAT** (Agencia Tributaria Española).
 
+**[Read in English](README.en.md)**
+
 [![CI](https://github.com/your-username/verifactu/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/verifactu/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/your-username/verifactu/branch/master/graph/badge.svg)](https://codecov.io/gh/your-username/verifactu)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
@@ -540,6 +542,10 @@ const client = new VerifactuClient({
   // ...
 });
 ```
+
+## Contribuir
+
+Por favor, lee nuestra [Guía de Contribución](CONTRIBUTING.md) y [Código de Conducta](CODE_OF_CONDUCT.md) antes de enviar un pull request.
 
 ## Recursos
 

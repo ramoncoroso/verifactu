@@ -4,7 +4,7 @@ Mejoras planificadas para futuras versiones de Verifactu.
 
 ---
 
-## Sprint Futuro 1: Límite de Concurrencia
+## Sprint Futuro: Límite de Concurrencia
 
 **Prioridad:** Baja
 **Impacto:** Medio
@@ -41,7 +41,7 @@ const client = new VerifactuClient({
 
 ---
 
-## Sprint Futuro 2: Releases Automáticos (semantic-release)
+## Sprint Futuro: Releases Automáticos (semantic-release)
 
 **Prioridad:** Media
 **Impacto:** Alto
@@ -113,7 +113,7 @@ Formato: `<type>(<scope>): <description>`
 
 ---
 
-## Sprint Futuro 3: Logger Inyectable y Observabilidad
+## Sprint Futuro: Logger Inyectable y Observabilidad
 
 **Prioridad:** Media
 **Impacto:** Medio
@@ -182,7 +182,7 @@ const client = new VerifactuClient({
 
 ---
 
-## Sprint Futuro 4: Developer Experience (Local Dev)
+## Sprint Futuro: Developer Experience (Local Dev)
 
 **Prioridad:** Baja
 **Impacto:** Medio
@@ -263,75 +263,6 @@ SOFTWARE_VERSION=1.0.0
 
 ---
 
-## Sprint Futuro 5: Comunidad y Accesibilidad
-
-**Prioridad:** Media
-**Impacto:** Alto (para adopción)
-**Esfuerzo:** Medio
-
-### Descripción
-
-Preparar el proyecto para contribuciones de la comunidad y ampliar la audiencia con documentación en inglés.
-
-### Tareas
-
-- [ ] Crear `README.en.md` (traducción al inglés)
-- [ ] Actualizar README.md con link a versión inglesa
-- [ ] Crear `CODE_OF_CONDUCT.md` (Contributor Covenant)
-- [ ] Crear `CONTRIBUTING.md` con guía de contribución
-- [ ] Crear `.github/ISSUE_TEMPLATE/bug_report.md`
-- [ ] Crear `.github/ISSUE_TEMPLATE/feature_request.md`
-- [ ] Crear `.github/PULL_REQUEST_TEMPLATE.md`
-- [ ] Configurar labels en GitHub (good first issue, help wanted, etc.)
-
-### CODE_OF_CONDUCT.md
-
-Usar [Contributor Covenant](https://www.contributor-covenant.org/) versión 2.1.
-
-### CONTRIBUTING.md (estructura)
-
-```markdown
-# Contribuir a Verifactu
-
-## Código de Conducta
-## Cómo Reportar Bugs
-## Cómo Sugerir Mejoras
-## Proceso de Pull Request
-## Guía de Estilo
-## Conventional Commits
-## Configuración del Entorno de Desarrollo
-## Tests
-## Preguntas
-```
-
-### Issue Templates
-
-**Bug Report:**
-- Descripción del bug
-- Pasos para reproducir
-- Comportamiento esperado
-- Entorno (Node version, OS)
-- Logs/Screenshots
-
-**Feature Request:**
-- Descripción de la funcionalidad
-- Caso de uso
-- Alternativas consideradas
-- Contexto adicional
-
-### Labels sugeridos
-
-| Label | Descripción | Color |
-|-------|-------------|-------|
-| `good first issue` | Bueno para nuevos contribuidores | #7057ff |
-| `help wanted` | Se necesita ayuda | #008672 |
-| `bug` | Algo no funciona | #d73a4a |
-| `enhancement` | Nueva funcionalidad | #a2eeef |
-| `documentation` | Mejoras de docs | #0075ca |
-| `question` | Pregunta | #d876e3 |
-
----
-
 ## Historial de Sprints Completados
 
 ### Sprint 1: CI/CD y Calidad (Completado)
@@ -351,3 +282,10 @@ Usar [Contributor Covenant](https://www.contributor-covenant.org/) versión 2.1.
 - Sección Security con guías CI/CD, K8s
 - Soporte Buffer para certificados en memoria
 - CHANGELOG.md
+
+### Sprint 4: Comunidad y Accesibilidad (Completado)
+- README.en.md (traducción al inglés)
+- CODE_OF_CONDUCT.md (Contributor Covenant 2.1)
+- CONTRIBUTING.md con guía completa
+- Templates de issues (bug_report, feature_request)
+- PULL_REQUEST_TEMPLATE.md

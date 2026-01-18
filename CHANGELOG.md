@@ -30,6 +30,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Weekly GitHub Actions updates
   - Grouped dev dependency updates
 
+- **Buffer Certificate Support**: In-memory certificate handling for cloud environments
+  - `PfxCertificateBufferConfig` - Load PFX certificates from Buffer
+  - `PemCertificateBufferConfig` - Load PEM certificates from Buffer
+  - Ideal for AWS Secrets Manager, Azure Key Vault, HashiCorp Vault
+
+- **Community & Contribution**
+  - `README.en.md` - Full English documentation
+  - `CODE_OF_CONDUCT.md` - Contributor Covenant 2.1
+  - `CONTRIBUTING.md` - Comprehensive contribution guide
+  - Issue templates (bug report, feature request)
+  - Pull request template
+
 ## [0.1.0] - 2024-01-XX
 
 ### Added
