@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Issue templates (bug report, feature request)
   - Pull request template
 
+- **Concurrency Limiting**: Control concurrent requests to AEAT services
+  - `maxConcurrency` - Limit simultaneous requests (default: unlimited)
+  - `queueTimeout` - Timeout for queued requests (default: 30000ms)
+  - `getConcurrencyStats()` - Get active/queued request counts
+  - `QueueTimeoutError` - Thrown when queue timeout exceeded
+  - Semaphore-based implementation with zero dependencies
+
 ## [0.1.0] - 2024-01-XX
 
 ### Added

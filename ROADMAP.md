@@ -4,43 +4,6 @@ Mejoras planificadas para futuras versiones de Verifactu.
 
 ---
 
-## Sprint Futuro: Límite de Concurrencia
-
-**Prioridad:** Baja
-**Impacto:** Medio
-**Esfuerzo:** Medio
-
-### Descripción
-
-Implementar un sistema de límite de concurrencia para controlar el número de peticiones simultáneas a los servicios de AEAT, evitando posible rate limiting o bloqueo.
-
-### Tareas
-
-- [ ] Investigar límites reales de AEAT (si están documentados)
-- [ ] Implementar pool de conexiones con límite configurable
-- [ ] Añadir opción `maxConcurrency` a `VerifactuClientConfig`
-- [ ] Implementar cola de peticiones con prioridad opcional
-- [ ] Añadir tests para concurrencia
-- [ ] Documentar uso en README
-
-### Ejemplo de API propuesta
-
-```typescript
-const client = new VerifactuClient({
-  // ...config
-  maxConcurrency: 5, // Máximo 5 peticiones simultáneas
-  queueTimeout: 30000, // Timeout para peticiones en cola
-});
-```
-
-### Notas
-
-- Considerar usar `p-limit` o implementación propia
-- Los usuarios pueden resolver esto externamente con librerías como `bottleneck`
-- Evaluar si realmente es necesario basándose en feedback de usuarios
-
----
-
 ## Sprint Futuro: Releases Automáticos (semantic-release)
 
 **Prioridad:** Media
@@ -289,3 +252,10 @@ SOFTWARE_VERSION=1.0.0
 - CONTRIBUTING.md con guía completa
 - Templates de issues (bug_report, feature_request)
 - PULL_REQUEST_TEMPLATE.md
+
+### Sprint 5: Límite de Concurrencia (Completado)
+- `ConcurrencyLimiter` con patrón semáforo
+- Opciones `maxConcurrency` y `queueTimeout` en VerifactuClient
+- `getConcurrencyStats()` para monitorización
+- `QueueTimeoutError` para timeout en cola
+- Tests completos (27 tests)

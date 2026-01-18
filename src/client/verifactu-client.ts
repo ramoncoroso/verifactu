@@ -18,6 +18,7 @@ import { formatXmlDate, formatXmlDateTime, formatXmlNumber } from '../xml/builde
 import { findNode, getChildText } from '../xml/parser.js';
 import type { XmlNode } from '../xml/parser.js';
 import { withRetry, type RetryOptions } from './retry.js';
+import { ConcurrencyLimiter, type ConcurrencyOptions } from './concurrency.js';
 
 /**
  * Client configuration
@@ -35,6 +36,10 @@ export interface VerifactuClientConfig {
   chainState?: ChainState;
   /** Default retry options for all operations */
   retry?: RetryOptions;
+  /** Maximum concurrent requests to AEAT (default: unlimited) */
+  maxConcurrency?: number;
+  /** Timeout in ms for waiting in queue when at capacity (default: 30000) */
+  queueTimeout?: number;
 }
 
 /**
@@ -102,6 +107,7 @@ export class VerifactuClient {
   private chain: RecordChain; // Not readonly - needs to be restored on retry
   private readonly software: SoftwareInfo;
   private readonly retryOptions?: RetryOptions;
+  private readonly concurrencyLimiter: ConcurrencyLimiter;
 
   constructor(config: VerifactuClientConfig) {
     this.endpoints = getEndpoints(config.environment);
@@ -115,6 +121,10 @@ export class VerifactuClient {
       : RecordChain.create();
     this.software = config.software;
     this.retryOptions = config.retry;
+    this.concurrencyLimiter = new ConcurrencyLimiter({
+      maxConcurrency: config.maxConcurrency,
+      queueTimeout: config.queueTimeout,
+    });
   }
 
   /**
@@ -130,11 +140,13 @@ export class VerifactuClient {
     // Build SOAP request
     const soapBody = this.buildAltaSoapBody(processedInvoice, timestamp, isFirst);
 
-    // Send request
-    const response = await this.soapClient.send(
-      this.endpoints.alta,
-      SOAP_ACTIONS.ALTA,
-      soapBody
+    // Send request with concurrency limiting
+    const response = await this.concurrencyLimiter.execute(() =>
+      this.soapClient.send(
+        this.endpoints.alta,
+        SOAP_ACTIONS.ALTA,
+        soapBody
+      )
     );
 
     // Parse response
@@ -162,11 +174,13 @@ export class VerifactuClient {
     // Build SOAP request
     const soapBody = this.buildAnulacionSoapBody(processedCancellation, timestamp, isFirst);
 
-    // Send request
-    const response = await this.soapClient.send(
-      this.endpoints.anulacion,
-      SOAP_ACTIONS.ANULACION,
-      soapBody
+    // Send request with concurrency limiting
+    const response = await this.concurrencyLimiter.execute(() =>
+      this.soapClient.send(
+        this.endpoints.anulacion,
+        SOAP_ACTIONS.ANULACION,
+        soapBody
+      )
     );
 
     // Parse response
@@ -183,11 +197,13 @@ export class VerifactuClient {
     // Build query SOAP request
     const soapBody = this.buildConsultaSoapBody(invoiceId, issuerNif);
 
-    // Send request
-    const response = await this.soapClient.send(
-      this.endpoints.consulta,
-      SOAP_ACTIONS.CONSULTA,
-      soapBody
+    // Send request with concurrency limiting
+    const response = await this.concurrencyLimiter.execute(() =>
+      this.soapClient.send(
+        this.endpoints.consulta,
+        SOAP_ACTIONS.CONSULTA,
+        soapBody
+      )
     );
 
     // Parse response
@@ -306,6 +322,19 @@ export class VerifactuClient {
    */
   getSoftwareInfo(): SoftwareInfo {
     return this.software;
+  }
+
+  /**
+   * Get concurrency statistics
+   *
+   * Returns information about current concurrency state:
+   * - activeCount: Number of currently running operations
+   * - queueLength: Number of operations waiting in queue
+   * - maxConcurrency: Maximum allowed concurrent operations
+   * - isAtCapacity: Whether the limiter is at capacity
+   */
+  getConcurrencyStats() {
+    return this.concurrencyLimiter.getStats();
   }
 
   /**

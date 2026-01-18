@@ -90,6 +90,9 @@ const client = new VerifactuClient(config);
 | `software` | `SoftwareInfo` | Información del software |
 | `timeout?` | `number` | Timeout en ms (default: 30000) |
 | `chainState?` | `ChainState` | Estado inicial de la cadena |
+| `retry?` | `RetryOptions` | Opciones de reintentos automáticos |
+| `maxConcurrency?` | `number` | Máximo de peticiones simultáneas (default: ilimitado) |
+| `queueTimeout?` | `number` | Timeout en ms para cola de espera (default: 30000) |
 
 #### Métodos
 
@@ -400,6 +403,51 @@ Los errores retryables incluyen:
 - `TimeoutError` - Timeouts de conexión
 - `ConnectionError` - Fallos de conexión
 - `AeatServiceUnavailableError` - Servicio AEAT no disponible
+
+## Límite de Concurrencia
+
+La librería permite limitar el número de peticiones simultáneas a AEAT para evitar saturación o rate limiting:
+
+```typescript
+const client = new VerifactuClient({
+  ...config,
+  maxConcurrency: 5,   // Máximo 5 peticiones simultáneas
+  queueTimeout: 30000, // Timeout de 30s para peticiones en cola
+});
+
+// Las peticiones que excedan el límite se encolan automáticamente
+const results = await Promise.all([
+  client.submitInvoice(invoice1),
+  client.submitInvoice(invoice2),
+  client.submitInvoice(invoice3),
+  // ... más facturas
+]);
+
+// Obtener estadísticas de concurrencia
+const stats = client.getConcurrencyStats();
+console.log(stats);
+// {
+//   activeCount: 2,      // Peticiones en curso
+//   queueLength: 3,      // Peticiones esperando
+//   maxConcurrency: 5,   // Límite configurado
+//   isAtCapacity: false  // ¿Está al límite?
+// }
+```
+
+Si una petición excede el `queueTimeout` esperando en cola, se lanza `QueueTimeoutError`:
+
+```typescript
+import { QueueTimeoutError } from 'verifactu';
+
+try {
+  await client.submitInvoice(invoice);
+} catch (error) {
+  if (error instanceof QueueTimeoutError) {
+    console.log('Timeout en cola:', error.timeout, 'ms');
+    console.log('Peticiones en cola:', error.queueLength);
+  }
+}
+```
 
 ## Ejemplos Avanzados
 

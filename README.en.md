@@ -91,6 +91,8 @@ const client = new VerifactuClient(config);
 | `timeout?` | `number` | Timeout in ms (default: 30000) |
 | `chainState?` | `ChainState` | Initial chain state |
 | `retry?` | `RetryOptions` | Retry configuration |
+| `maxConcurrency?` | `number` | Maximum concurrent requests (default: unlimited) |
+| `queueTimeout?` | `number` | Queue wait timeout in ms (default: 30000) |
 
 #### Methods
 
@@ -405,6 +407,51 @@ Retryable errors include:
 - `TimeoutError` - Connection timeouts
 - `ConnectionError` - Connection failures
 - `AeatServiceUnavailableError` - AEAT service unavailable
+
+## Concurrency Limiting
+
+The library allows limiting concurrent requests to AEAT to avoid saturation or rate limiting:
+
+```typescript
+const client = new VerifactuClient({
+  ...config,
+  maxConcurrency: 5,   // Maximum 5 concurrent requests
+  queueTimeout: 30000, // 30s timeout for queued requests
+});
+
+// Requests exceeding the limit are automatically queued
+const results = await Promise.all([
+  client.submitInvoice(invoice1),
+  client.submitInvoice(invoice2),
+  client.submitInvoice(invoice3),
+  // ... more invoices
+]);
+
+// Get concurrency statistics
+const stats = client.getConcurrencyStats();
+console.log(stats);
+// {
+//   activeCount: 2,      // Active requests
+//   queueLength: 3,      // Queued requests
+//   maxConcurrency: 5,   // Configured limit
+//   isAtCapacity: false  // At capacity?
+// }
+```
+
+If a request exceeds `queueTimeout` while waiting in queue, `QueueTimeoutError` is thrown:
+
+```typescript
+import { QueueTimeoutError } from 'verifactu';
+
+try {
+  await client.submitInvoice(invoice);
+} catch (error) {
+  if (error instanceof QueueTimeoutError) {
+    console.log('Queue timeout:', error.timeout, 'ms');
+    console.log('Queue length:', error.queueLength);
+  }
+}
+```
 
 ## Advanced Examples
 
