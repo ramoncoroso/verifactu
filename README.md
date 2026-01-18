@@ -4,8 +4,8 @@ Librería TypeScript **production-ready** para integrar con el sistema **Verifac
 
 **[Read in English](README.en.md)**
 
-[![CI](https://github.com/your-username/verifactu/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/verifactu/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/your-username/verifactu/branch/master/graph/badge.svg)](https://codecov.io/gh/your-username/verifactu)
+[![CI](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml/badge.svg)](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/ramoncoroso/verifactu/branch/master/graph/badge.svg)](https://codecov.io/gh/ramoncoroso/verifactu)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
