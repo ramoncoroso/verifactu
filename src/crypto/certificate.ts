@@ -18,9 +18,9 @@ import {
 export type CertificateFormat = 'pfx' | 'pem';
 
 /**
- * PFX certificate configuration
+ * PFX certificate configuration (file path)
  */
-export interface PfxCertificateConfig {
+export interface PfxCertificatePathConfig {
   type: 'pfx';
   /** Path to the PFX/P12 file */
   path: string;
@@ -29,9 +29,26 @@ export interface PfxCertificateConfig {
 }
 
 /**
- * PEM certificate configuration
+ * PFX certificate configuration (in-memory Buffer)
+ * Use this for cloud environments where certificates are injected as secrets
  */
-export interface PemCertificateConfig {
+export interface PfxCertificateBufferConfig {
+  type: 'pfx';
+  /** PFX/P12 certificate data as Buffer */
+  data: Buffer;
+  /** Password for the PFX file */
+  password: string;
+}
+
+/**
+ * PFX certificate configuration (path or buffer)
+ */
+export type PfxCertificateConfig = PfxCertificatePathConfig | PfxCertificateBufferConfig;
+
+/**
+ * PEM certificate configuration (file paths)
+ */
+export interface PemCertificatePathConfig {
   type: 'pem';
   /** Path to the certificate file (.crt or .pem) */
   certPath: string;
@@ -44,9 +61,44 @@ export interface PemCertificateConfig {
 }
 
 /**
+ * PEM certificate configuration (in-memory Buffers)
+ * Use this for cloud environments where certificates are injected as secrets
+ */
+export interface PemCertificateBufferConfig {
+  type: 'pem';
+  /** Certificate data as Buffer */
+  certData: Buffer;
+  /** Private key data as Buffer */
+  keyData: Buffer;
+  /** Password for the private key (if encrypted) */
+  keyPassword?: string;
+  /** CA certificate chain data as Buffer (optional) */
+  caData?: Buffer;
+}
+
+/**
+ * PEM certificate configuration (paths or buffers)
+ */
+export type PemCertificateConfig = PemCertificatePathConfig | PemCertificateBufferConfig;
+
+/**
  * Certificate configuration
  */
 export type CertificateConfig = PfxCertificateConfig | PemCertificateConfig;
+
+/**
+ * Type guard to check if PFX config uses path
+ */
+function isPfxPathConfig(config: PfxCertificateConfig): config is PfxCertificatePathConfig {
+  return 'path' in config;
+}
+
+/**
+ * Type guard to check if PEM config uses paths
+ */
+function isPemPathConfig(config: PemCertificateConfig): config is PemCertificatePathConfig {
+  return 'certPath' in config;
+}
 
 /**
  * Loaded certificate data
@@ -90,9 +142,19 @@ export function loadCertificate(config: CertificateConfig): LoadedCertificate {
 }
 
 /**
- * Load a PFX/P12 certificate
+ * Load a PFX/P12 certificate (from path or buffer)
  */
 function loadPfxCertificate(config: PfxCertificateConfig): LoadedCertificate {
+  // Buffer config - certificate data already in memory
+  if (!isPfxPathConfig(config)) {
+    return {
+      format: 'pfx',
+      pfx: config.data,
+      passphrase: config.password,
+    };
+  }
+
+  // Path config - load from file
   try {
     const pfx = readFileSync(config.path);
     return {
@@ -111,9 +173,21 @@ function loadPfxCertificate(config: PfxCertificateConfig): LoadedCertificate {
 }
 
 /**
- * Load a PEM certificate
+ * Load a PEM certificate (from paths or buffers)
  */
 function loadPemCertificate(config: PemCertificateConfig): LoadedCertificate {
+  // Buffer config - certificate data already in memory
+  if (!isPemPathConfig(config)) {
+    return {
+      format: 'pem',
+      cert: config.certData,
+      key: config.keyData,
+      ca: config.caData,
+      passphrase: config.keyPassword,
+    };
+  }
+
+  // Path config - load from files
   try {
     const cert = readFileSync(config.certPath);
     const key = readFileSync(config.keyPath);

@@ -12,7 +12,9 @@ import {
   CertificateManager,
   createCertificateManager,
   type PfxCertificateConfig,
+  type PfxCertificateBufferConfig,
   type PemCertificateConfig,
+  type PemCertificateBufferConfig,
   type LoadedCertificate,
 } from '../../src/crypto/certificate.js';
 import {
@@ -227,6 +229,72 @@ describe('Certificate', () => {
         };
 
         expect(() => loadCertificate(config)).toThrow(CertificateNotFoundError);
+      });
+    });
+
+    describe('PFX Buffer certificate (in-memory)', () => {
+      it('should load PFX from Buffer without file access', () => {
+        const pfxBuffer = Buffer.from('mock-pfx-data');
+
+        const config: PfxCertificateBufferConfig = {
+          type: 'pfx',
+          data: pfxBuffer,
+          password: 'test-password',
+        };
+
+        const result = loadCertificate(config);
+
+        expect(result.format).toBe('pfx');
+        expect(result.pfx).toBe(pfxBuffer);
+        expect(result.passphrase).toBe('test-password');
+        // Should not call readFileSync for buffer configs
+        expect(mockReadFileSync).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('PEM Buffer certificate (in-memory)', () => {
+      it('should load PEM from Buffers without file access', () => {
+        const certBuffer = Buffer.from('mock-cert-data');
+        const keyBuffer = Buffer.from('mock-key-data');
+
+        const config: PemCertificateBufferConfig = {
+          type: 'pem',
+          certData: certBuffer,
+          keyData: keyBuffer,
+        };
+
+        const result = loadCertificate(config);
+
+        expect(result.format).toBe('pem');
+        expect(result.cert).toBe(certBuffer);
+        expect(result.key).toBe(keyBuffer);
+        expect(result.ca).toBeUndefined();
+        expect(result.passphrase).toBeUndefined();
+        // Should not call readFileSync for buffer configs
+        expect(mockReadFileSync).not.toHaveBeenCalled();
+      });
+
+      it('should load PEM from Buffers with CA and password', () => {
+        const certBuffer = Buffer.from('mock-cert-data');
+        const keyBuffer = Buffer.from('mock-key-data');
+        const caBuffer = Buffer.from('mock-ca-data');
+
+        const config: PemCertificateBufferConfig = {
+          type: 'pem',
+          certData: certBuffer,
+          keyData: keyBuffer,
+          caData: caBuffer,
+          keyPassword: 'key-password',
+        };
+
+        const result = loadCertificate(config);
+
+        expect(result.format).toBe('pem');
+        expect(result.cert).toBe(certBuffer);
+        expect(result.key).toBe(keyBuffer);
+        expect(result.ca).toBe(caBuffer);
+        expect(result.passphrase).toBe('key-password');
+        expect(mockReadFileSync).not.toHaveBeenCalled();
       });
     });
   });

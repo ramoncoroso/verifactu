@@ -31,17 +31,17 @@ npm install verifactu
 ```typescript
 import { VerifactuClient, InvoiceBuilder } from 'verifactu';
 
-// 1. Crear cliente
+// 1. Crear cliente (usa variables de entorno para credenciales)
 const client = new VerifactuClient({
   environment: 'sandbox', // o 'production'
   certificate: {
     type: 'pfx',
-    path: './certificado.pfx',
-    password: 'tu-contraseña',
+    path: process.env.CERT_PATH!,
+    password: process.env.CERT_PASSWORD!,
   },
   software: {
     name: 'Mi Aplicación',
-    developerTaxId: 'B12345678',
+    developerTaxId: process.env.DEVELOPER_TAX_ID!,
     version: '1.0.0',
     installationNumber: '001',
     systemType: 'V',
@@ -266,13 +266,16 @@ document.getElementById('qr').innerHTML = svg;
 
 ## Configuración del Certificado
 
+> **Seguridad**: Nunca incluyas contraseñas o rutas a certificados directamente en el código.
+> Usa variables de entorno o un gestor de secretos.
+
 ### PFX/P12
 
 ```typescript
 certificate: {
   type: 'pfx',
-  path: './certificado.pfx',
-  password: 'contraseña',
+  path: process.env.CERT_PATH!,
+  password: process.env.CERT_PASSWORD!,
 }
 ```
 
@@ -281,10 +284,22 @@ certificate: {
 ```typescript
 certificate: {
   type: 'pem',
-  certPath: './certificado.crt',
-  keyPath: './clave-privada.key',
-  keyPassword: 'contraseña', // opcional
-  caPath: './ca-chain.crt',  // opcional
+  certPath: process.env.CERT_PATH!,
+  keyPath: process.env.KEY_PATH!,
+  keyPassword: process.env.KEY_PASSWORD, // opcional
+  caPath: process.env.CA_PATH,           // opcional
+}
+```
+
+### Buffer (en memoria)
+
+Para entornos cloud donde los certificados se inyectan como secretos:
+
+```typescript
+certificate: {
+  type: 'pfx',
+  data: Buffer.from(process.env.CERT_BASE64!, 'base64'),
+  password: process.env.CERT_PASSWORD!,
 }
 ```
 
@@ -459,6 +474,72 @@ npm run typecheck
 - Node.js >= 18.0.0
 - Certificado digital válido (FNMT, etc.)
 - Alta en el sistema Verifactu de AEAT
+
+## Seguridad
+
+### Manejo de Certificados
+
+1. **Nunca commits certificados o contraseñas** al repositorio
+2. **Usa variables de entorno** para rutas y contraseñas
+3. **En producción**, usa un gestor de secretos (AWS Secrets Manager, Azure Key Vault, HashiCorp Vault)
+
+### Variables de Entorno Recomendadas
+
+```bash
+# .env (nunca commitear este archivo)
+VERIFACTU_ENV=sandbox
+CERT_PATH=/secure/path/to/certificate.pfx
+CERT_PASSWORD=your-secure-password
+DEVELOPER_TAX_ID=B12345678
+```
+
+### Configuración en CI/CD
+
+```yaml
+# GitHub Actions
+- name: Run tests
+  env:
+    CERT_PATH: ${{ secrets.CERT_PATH }}
+    CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+  run: npm test
+```
+
+### Kubernetes / Docker
+
+```yaml
+# Montar certificado desde Secret
+volumes:
+  - name: cert-volume
+    secret:
+      secretName: verifactu-cert
+containers:
+  - name: app
+    env:
+      - name: CERT_PATH
+        value: /etc/certs/certificate.pfx
+      - name: CERT_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: verifactu-secrets
+            key: cert-password
+```
+
+### Certificados en Memoria (Cloud)
+
+Para entornos donde el certificado se inyecta como variable de entorno en base64:
+
+```typescript
+const certBuffer = Buffer.from(process.env.CERT_BASE64!, 'base64');
+
+const client = new VerifactuClient({
+  certificate: {
+    type: 'pfx',
+    data: certBuffer,
+    password: process.env.CERT_PASSWORD!,
+  },
+  // ...
+});
+```
 
 ## Recursos
 
