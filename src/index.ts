@@ -30,6 +30,7 @@ export * from './builders/index.js';
 
 // Re-export main classes and functions for convenience
 export { VerifactuClient, createVerifactuClient } from './client/verifactu-client.js';
+export { withRetry, withRetryAndMetadata, type RetryOptions, type RetryResult } from './client/retry.js';
 export { InvoiceBuilder, createInvoiceBuilder, quickInvoice } from './builders/invoice-builder.js';
 export { RecordChain } from './crypto/chain.js';
 export { QrGenerator, createQrGenerator, generateQrCode } from './qr/generator.js';

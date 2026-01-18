@@ -17,6 +17,7 @@ import { AeatError } from '../errors/network-errors.js';
 import { formatXmlDate, formatXmlDateTime, formatXmlNumber } from '../xml/builder.js';
 import { findNode, getChildText } from '../xml/parser.js';
 import type { XmlNode } from '../xml/parser.js';
+import { withRetry, type RetryOptions } from './retry.js';
 
 /**
  * Client configuration
@@ -32,6 +33,8 @@ export interface VerifactuClientConfig {
   timeout?: number;
   /** Initial chain state (for resuming) */
   chainState?: ChainState;
+  /** Default retry options for all operations */
+  retry?: RetryOptions;
 }
 
 /**
@@ -98,6 +101,7 @@ export class VerifactuClient {
   private readonly soapClient: SoapClient;
   private readonly chain: RecordChain;
   private readonly software: SoftwareInfo;
+  private readonly retryOptions?: RetryOptions;
 
   constructor(config: VerifactuClientConfig) {
     this.endpoints = getEndpoints(config.environment);
@@ -110,6 +114,7 @@ export class VerifactuClient {
       ? RecordChain.fromState(config.chainState)
       : RecordChain.create();
     this.software = config.software;
+    this.retryOptions = config.retry;
   }
 
   /**
@@ -187,6 +192,63 @@ export class VerifactuClient {
 
     // Parse response
     return this.parseConsultaResponse(response.xml);
+  }
+
+  /**
+   * Submit an invoice to AEAT with automatic retry
+   *
+   * Uses exponential backoff with jitter for retryable errors.
+   * Respects error-specific retry information when available.
+   *
+   * @param invoice - The invoice to submit
+   * @param options - Optional retry options (overrides client defaults)
+   */
+  async submitInvoiceWithRetry(
+    invoice: Invoice,
+    options?: RetryOptions
+  ): Promise<SubmitInvoiceResponse> {
+    const retryOpts = { ...this.retryOptions, ...options };
+    return withRetry(() => this.submitInvoice(invoice), retryOpts);
+  }
+
+  /**
+   * Cancel an invoice with automatic retry
+   *
+   * Uses exponential backoff with jitter for retryable errors.
+   * Respects error-specific retry information when available.
+   *
+   * @param invoiceId - The invoice ID to cancel
+   * @param issuer - The invoice issuer
+   * @param reason - Optional cancellation reason
+   * @param options - Optional retry options (overrides client defaults)
+   */
+  async cancelInvoiceWithRetry(
+    invoiceId: InvoiceId,
+    issuer: Issuer,
+    reason?: string,
+    options?: RetryOptions
+  ): Promise<SubmitCancellationResponse> {
+    const retryOpts = { ...this.retryOptions, ...options };
+    return withRetry(() => this.cancelInvoice(invoiceId, issuer, reason), retryOpts);
+  }
+
+  /**
+   * Check invoice status with automatic retry
+   *
+   * Uses exponential backoff with jitter for retryable errors.
+   * Respects error-specific retry information when available.
+   *
+   * @param invoiceId - The invoice ID to check
+   * @param issuerNif - The issuer's NIF
+   * @param options - Optional retry options (overrides client defaults)
+   */
+  async checkInvoiceStatusWithRetry(
+    invoiceId: InvoiceId,
+    issuerNif: string,
+    options?: RetryOptions
+  ): Promise<InvoiceStatusResponse> {
+    const retryOpts = { ...this.retryOptions, ...options };
+    return withRetry(() => this.checkInvoiceStatus(invoiceId, issuerNif), retryOpts);
   }
 
   /**

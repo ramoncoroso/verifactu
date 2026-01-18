@@ -2,10 +2,12 @@
 
 Librería TypeScript **production-ready** para integrar con el sistema **Verifactu de la AEAT** (Agencia Tributaria Española).
 
+[![CI](https://github.com/your-username/verifactu/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/verifactu/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/your-username/verifactu/branch/master/graph/badge.svg)](https://codecov.io/gh/your-username/verifactu)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Coverage](https://img.shields.io/badge/Coverage-94%25-brightgreen.svg)]()
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)]()
 
 ## Características
 
@@ -342,6 +344,45 @@ try {
   }
 }
 ```
+
+## Reintentos Automáticos
+
+La librería proporciona reintentos automáticos con backoff exponencial para errores de red transitorios:
+
+```typescript
+// Usar métodos con retry integrado
+const response = await client.submitInvoiceWithRetry(invoice);
+
+// O configurar retry por defecto en el cliente
+const client = new VerifactuClient({
+  ...config,
+  retry: {
+    maxRetries: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 30000,
+  },
+});
+
+// También disponible como utilidad independiente
+import { withRetry } from 'verifactu';
+
+const result = await withRetry(
+  () => someAsyncOperation(),
+  {
+    maxRetries: 3,
+    initialDelayMs: 1000,
+    onRetry: (attempt, error, delayMs) => {
+      console.log(`Reintento ${attempt} en ${delayMs}ms: ${error.message}`);
+    },
+  }
+);
+```
+
+Los errores retryables incluyen:
+- `NetworkError` - Errores de red transitorios
+- `TimeoutError` - Timeouts de conexión
+- `ConnectionError` - Fallos de conexión
+- `AeatServiceUnavailableError` - Servicio AEAT no disponible
 
 ## Ejemplos Avanzados
 
