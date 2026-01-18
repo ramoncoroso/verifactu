@@ -18,7 +18,8 @@ import { formatXmlDate, formatXmlDateTime, formatXmlNumber } from '../xml/builde
 import { findNode, getChildText } from '../xml/parser.js';
 import type { XmlNode } from '../xml/parser.js';
 import { withRetry, type RetryOptions } from './retry.js';
-import { ConcurrencyLimiter, type ConcurrencyOptions } from './concurrency.js';
+import { ConcurrencyLimiter, type ConcurrencyStats } from './concurrency.js';
+import { type Logger, noopLogger, sanitizeXmlForLogging } from './logger.js';
 
 /**
  * Client configuration
@@ -40,6 +41,8 @@ export interface VerifactuClientConfig {
   maxConcurrency?: number;
   /** Timeout in ms for waiting in queue when at capacity (default: 30000) */
   queueTimeout?: number;
+  /** Logger for debugging and monitoring (default: noop) */
+  logger?: Logger;
 }
 
 /**
@@ -108,6 +111,7 @@ export class VerifactuClient {
   private readonly software: SoftwareInfo;
   private readonly retryOptions?: RetryOptions;
   private readonly concurrencyLimiter: ConcurrencyLimiter;
+  private readonly logger: Logger;
 
   constructor(config: VerifactuClientConfig) {
     this.endpoints = getEndpoints(config.environment);
@@ -125,12 +129,25 @@ export class VerifactuClient {
       maxConcurrency: config.maxConcurrency,
       queueTimeout: config.queueTimeout,
     });
+    this.logger = config.logger ?? noopLogger;
   }
 
   /**
    * Submit an invoice to AEAT
    */
   async submitInvoice(invoice: Invoice): Promise<SubmitInvoiceResponse> {
+    const startTime = Date.now();
+    const invoiceNum = invoice.id.series
+      ? `${invoice.id.series}${invoice.id.number}`
+      : invoice.id.number;
+
+    this.logger.info('Submitting invoice', {
+      operation: 'submitInvoice',
+      invoiceId: invoiceNum,
+      issuerNif: invoice.issuer.taxId.value.slice(-4),
+      invoiceType: invoice.invoiceType,
+    });
+
     const timestamp = new Date();
     const isFirst = this.chain.isFirstRecord();
 
@@ -140,17 +157,56 @@ export class VerifactuClient {
     // Build SOAP request
     const soapBody = this.buildAltaSoapBody(processedInvoice, timestamp, isFirst);
 
-    // Send request with concurrency limiting
-    const response = await this.concurrencyLimiter.execute(() =>
-      this.soapClient.send(
-        this.endpoints.alta,
-        SOAP_ACTIONS.ALTA,
-        soapBody
-      )
-    );
+    this.logger.debug('SOAP request built', {
+      operation: 'submitInvoice',
+      invoiceId: invoiceNum,
+      xml: sanitizeXmlForLogging(soapBody),
+    });
 
-    // Parse response
-    return this.parseAltaResponse(response.xml, processedInvoice);
+    try {
+      // Send request with concurrency limiting
+      const response = await this.concurrencyLimiter.execute(() =>
+        this.soapClient.send(
+          this.endpoints.alta,
+          SOAP_ACTIONS.ALTA,
+          soapBody
+        )
+      );
+
+      // Parse response
+      const result = this.parseAltaResponse(response.xml, processedInvoice);
+      const durationMs = Date.now() - startTime;
+
+      if (result.accepted) {
+        this.logger.info('Invoice submitted successfully', {
+          operation: 'submitInvoice',
+          invoiceId: invoiceNum,
+          state: result.state,
+          csv: result.csv,
+          durationMs,
+        });
+      } else {
+        this.logger.warn('Invoice rejected', {
+          operation: 'submitInvoice',
+          invoiceId: invoiceNum,
+          state: result.state,
+          errorCode: result.errorCode,
+          errorDescription: result.errorDescription,
+          durationMs,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      this.logger.error('Invoice submission failed', {
+        operation: 'submitInvoice',
+        invoiceId: invoiceNum,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs,
+      });
+      throw error;
+    }
   }
 
   /**
@@ -161,6 +217,18 @@ export class VerifactuClient {
     issuer: Issuer,
     reason?: string
   ): Promise<SubmitCancellationResponse> {
+    const startTime = Date.now();
+    const invoiceNum = invoiceId.series
+      ? `${invoiceId.series}${invoiceId.number}`
+      : invoiceId.number;
+
+    this.logger.info('Cancelling invoice', {
+      operation: 'cancelInvoice',
+      invoiceId: invoiceNum,
+      issuerNif: issuer.taxId.value.slice(-4),
+      reason: reason ?? 'not specified',
+    });
+
     const cancellation: InvoiceCancellation = reason !== undefined
       ? { operationType: 'AN', invoiceId, issuer, reason }
       : { operationType: 'AN', invoiceId, issuer };
@@ -174,17 +242,56 @@ export class VerifactuClient {
     // Build SOAP request
     const soapBody = this.buildAnulacionSoapBody(processedCancellation, timestamp, isFirst);
 
-    // Send request with concurrency limiting
-    const response = await this.concurrencyLimiter.execute(() =>
-      this.soapClient.send(
-        this.endpoints.anulacion,
-        SOAP_ACTIONS.ANULACION,
-        soapBody
-      )
-    );
+    this.logger.debug('SOAP request built', {
+      operation: 'cancelInvoice',
+      invoiceId: invoiceNum,
+      xml: sanitizeXmlForLogging(soapBody),
+    });
 
-    // Parse response
-    return this.parseAnulacionResponse(response.xml, processedCancellation);
+    try {
+      // Send request with concurrency limiting
+      const response = await this.concurrencyLimiter.execute(() =>
+        this.soapClient.send(
+          this.endpoints.anulacion,
+          SOAP_ACTIONS.ANULACION,
+          soapBody
+        )
+      );
+
+      // Parse response
+      const result = this.parseAnulacionResponse(response.xml, processedCancellation);
+      const durationMs = Date.now() - startTime;
+
+      if (result.accepted) {
+        this.logger.info('Invoice cancelled successfully', {
+          operation: 'cancelInvoice',
+          invoiceId: invoiceNum,
+          state: result.state,
+          csv: result.csv,
+          durationMs,
+        });
+      } else {
+        this.logger.warn('Invoice cancellation rejected', {
+          operation: 'cancelInvoice',
+          invoiceId: invoiceNum,
+          state: result.state,
+          errorCode: result.errorCode,
+          errorDescription: result.errorDescription,
+          durationMs,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      this.logger.error('Invoice cancellation failed', {
+        operation: 'cancelInvoice',
+        invoiceId: invoiceNum,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs,
+      });
+      throw error;
+    }
   }
 
   /**
@@ -194,20 +301,59 @@ export class VerifactuClient {
     invoiceId: InvoiceId,
     issuerNif: string
   ): Promise<InvoiceStatusResponse> {
+    const startTime = Date.now();
+    const invoiceNum = invoiceId.series
+      ? `${invoiceId.series}${invoiceId.number}`
+      : invoiceId.number;
+
+    this.logger.info('Checking invoice status', {
+      operation: 'checkInvoiceStatus',
+      invoiceId: invoiceNum,
+      issuerNif: issuerNif.slice(-4),
+    });
+
     // Build query SOAP request
     const soapBody = this.buildConsultaSoapBody(invoiceId, issuerNif);
 
-    // Send request with concurrency limiting
-    const response = await this.concurrencyLimiter.execute(() =>
-      this.soapClient.send(
-        this.endpoints.consulta,
-        SOAP_ACTIONS.CONSULTA,
-        soapBody
-      )
-    );
+    this.logger.debug('SOAP request built', {
+      operation: 'checkInvoiceStatus',
+      invoiceId: invoiceNum,
+      xml: sanitizeXmlForLogging(soapBody),
+    });
 
-    // Parse response
-    return this.parseConsultaResponse(response.xml);
+    try {
+      // Send request with concurrency limiting
+      const response = await this.concurrencyLimiter.execute(() =>
+        this.soapClient.send(
+          this.endpoints.consulta,
+          SOAP_ACTIONS.CONSULTA,
+          soapBody
+        )
+      );
+
+      // Parse response
+      const result = this.parseConsultaResponse(response.xml);
+      const durationMs = Date.now() - startTime;
+
+      this.logger.info('Invoice status retrieved', {
+        operation: 'checkInvoiceStatus',
+        invoiceId: invoiceNum,
+        found: result.found,
+        state: result.state,
+        durationMs,
+      });
+
+      return result;
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      this.logger.error('Invoice status check failed', {
+        operation: 'checkInvoiceStatus',
+        invoiceId: invoiceNum,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs,
+      });
+      throw error;
+    }
   }
 
   /**
@@ -228,6 +374,9 @@ export class VerifactuClient {
     options?: RetryOptions
   ): Promise<SubmitInvoiceResponse> {
     const retryOpts = { ...this.retryOptions, ...options };
+    const invoiceNum = invoice.id.series
+      ? `${invoice.id.series}${invoice.id.number}`
+      : invoice.id.number;
 
     // Save chain state before operation to restore on retry
     const savedChainState = this.chain.getState();
@@ -237,6 +386,15 @@ export class VerifactuClient {
       {
         ...retryOpts,
         onRetry: (attempt, error, delayMs) => {
+          // Log retry attempt
+          this.logger.warn('Retrying invoice submission', {
+            operation: 'submitInvoice',
+            invoiceId: invoiceNum,
+            attempt,
+            delayMs,
+            error: error instanceof Error ? error.message : String(error),
+          });
+
           // Restore chain state before retry to prevent duplicate entries
           this.chain = RecordChain.fromState(savedChainState);
 
@@ -269,6 +427,9 @@ export class VerifactuClient {
     options?: RetryOptions
   ): Promise<SubmitCancellationResponse> {
     const retryOpts = { ...this.retryOptions, ...options };
+    const invoiceNum = invoiceId.series
+      ? `${invoiceId.series}${invoiceId.number}`
+      : invoiceId.number;
 
     // Save chain state before operation to restore on retry
     const savedChainState = this.chain.getState();
@@ -278,6 +439,15 @@ export class VerifactuClient {
       {
         ...retryOpts,
         onRetry: (attempt, error, delayMs) => {
+          // Log retry attempt
+          this.logger.warn('Retrying invoice cancellation', {
+            operation: 'cancelInvoice',
+            invoiceId: invoiceNum,
+            attempt,
+            delayMs,
+            error: error instanceof Error ? error.message : String(error),
+          });
+
           // Restore chain state before retry to prevent duplicate entries
           this.chain = RecordChain.fromState(savedChainState);
 
@@ -307,7 +477,29 @@ export class VerifactuClient {
     options?: RetryOptions
   ): Promise<InvoiceStatusResponse> {
     const retryOpts = { ...this.retryOptions, ...options };
-    return withRetry(() => this.checkInvoiceStatus(invoiceId, issuerNif), retryOpts);
+    const invoiceNum = invoiceId.series
+      ? `${invoiceId.series}${invoiceId.number}`
+      : invoiceId.number;
+
+    return withRetry(
+      () => this.checkInvoiceStatus(invoiceId, issuerNif),
+      {
+        ...retryOpts,
+        onRetry: (attempt, error, delayMs) => {
+          // Log retry attempt
+          this.logger.warn('Retrying invoice status check', {
+            operation: 'checkInvoiceStatus',
+            invoiceId: invoiceNum,
+            attempt,
+            delayMs,
+            error: error instanceof Error ? error.message : String(error),
+          });
+
+          // Call user's onRetry callback if provided
+          retryOpts.onRetry?.(attempt, error, delayMs);
+        },
+      }
+    );
   }
 
   /**
@@ -333,7 +525,7 @@ export class VerifactuClient {
    * - maxConcurrency: Maximum allowed concurrent operations
    * - isAtCapacity: Whether the limiter is at capacity
    */
-  getConcurrencyStats() {
+  getConcurrencyStats(): ConcurrencyStats {
     return this.concurrencyLimiter.getStats();
   }
 
