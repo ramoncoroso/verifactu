@@ -32,5 +32,7 @@ export default {
     'type-empty': [2, 'never'],
     // Subject max length
     'subject-max-length': [2, 'always', 100],
+    // Disable body max line length for semantic-release changelogs
+    'body-max-line-length': [0, 'always'],
   },
 };
