@@ -8,8 +8,6 @@ import {
   escapeXml,
   escapeXmlAttribute,
   formatXmlNumber,
-  formatXmlDate,
-  formatXmlDateTime,
   document,
   xml,
   fragment,

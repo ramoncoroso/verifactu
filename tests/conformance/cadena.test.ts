@@ -23,6 +23,7 @@ import type { Invoice } from '../../src/models/invoice.js';
 import type { SoftwareInfo } from '../../src/models/party.js';
 import { parseXml } from '../../src/xml/parser.js';
 import { buildRespuestaSuministro, wrapSoapResponse } from '../fixtures/aeat-respuesta.js';
+import type { XmlNode } from '../../src/xml/parser.js';
 
 const SOFTWARE: SoftwareInfo = {
   name: 'verifactu-ts',
@@ -45,7 +46,10 @@ function factura(numero = '001'): Invoice {
   } as unknown as Invoice;
 }
 
-function respuesta(estado: 'Correcto' | 'Incorrecto' = 'Correcto', codigo?: number) {
+function respuesta(
+  estado: 'Correcto' | 'Incorrecto' = 'Correcto',
+  codigo?: number
+): { statusCode: number; body: string; xml: XmlNode; headers: Record<string, string> } {
   const body = wrapSoapResponse(
     buildRespuestaSuministro({
       estadoEnvio: estado === 'Correcto' ? 'Correcto' : 'Incorrecto',

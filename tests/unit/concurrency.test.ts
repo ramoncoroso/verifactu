@@ -2,7 +2,7 @@
  * Tests for the Concurrency Limiter module
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   ConcurrencyLimiter,
   QueueTimeoutError,
@@ -345,7 +345,7 @@ describe('Integration with VerifactuClient pattern', () => {
     const limiter = new ConcurrencyLimiter({ maxConcurrency: 2 });
     const processedIds: string[] = [];
 
-    const submitInvoice = async (id: string) => {
+    const submitInvoice = async (id: string): Promise<{ id: string; status: string }> => {
       return limiter.execute(async () => {
         // Simulate network call
         await new Promise(resolve => setTimeout(resolve, 20));
@@ -382,7 +382,7 @@ describe('Integration with VerifactuClient pattern', () => {
     const results = await Promise.allSettled(operations);
 
     expect(results[0]).toEqual({ status: 'fulfilled', value: { success: true, id: 1 } });
-    expect(results[1].status).toBe('rejected');
+    expect(results[1]!.status).toBe('rejected');
     expect(results[2]).toEqual({ status: 'fulfilled', value: { success: true, id: 3 } });
 
     // All slots should be released

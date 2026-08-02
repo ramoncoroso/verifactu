@@ -148,7 +148,7 @@ export function extractSoapBody(envelope: string): string {
   );
   const nsDecls = [...aperturaEnvelope.matchAll(/xmlns:([\w.-]+)="([^"]+)"/g)]
     .filter(([, prefix]) => !['soapenv', 'soap', 'env'].includes(prefix!))
-    .filter(([, prefix]) => !yaDeclarados.has(prefix!))
+    .filter(([, prefix]) => !yaDeclarados.has(prefix))
     .map(([, prefix, uri]) => ` xmlns:${prefix}="${uri}"`)
     .join('');
 

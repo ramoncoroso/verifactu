@@ -13,7 +13,7 @@ import {
   calculateLineTotal,
   createInvoiceLine,
 } from '../../src/models/invoice.js';
-import type { Invoice, InvoiceCancellation, InvoiceLine } from '../../src/models/invoice.js';
+import type { Invoice, InvoiceCancellation } from '../../src/models/invoice.js';
 import { InvoiceType, VatRate } from '../../src/models/enums.js';
 
 describe('Invoice Models', () => {
@@ -21,7 +21,7 @@ describe('Invoice Models', () => {
     it('should return true for invoice', () => {
       const invoice: Invoice = {
         operationType: 'A',
-        invoiceType: InvoiceType.STANDARD,
+        invoiceType: InvoiceType.F1,
         id: { number: '001', issueDate: new Date() },
         issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name: 'Test' },
         operationRegimes: ['01'],
@@ -57,7 +57,7 @@ describe('Invoice Models', () => {
     it('should return false for invoice', () => {
       const invoice: Invoice = {
         operationType: 'A',
-        invoiceType: InvoiceType.STANDARD,
+        invoiceType: InvoiceType.F1,
         id: { number: '001', issueDate: new Date() },
         issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name: 'Test' },
         operationRegimes: ['01'],
@@ -141,7 +141,7 @@ describe('Invoice Models', () => {
         description: 'Test',
         quantity: 2,
         unitPrice: 50,
-        vatRate: VatRate.STANDARD_21,
+        vatRate: VatRate.General,
       };
 
       expect(calculateLineTotal(line)).toBe(100);
@@ -152,7 +152,7 @@ describe('Invoice Models', () => {
         description: 'Test',
         quantity: 1,
         unitPrice: 100,
-        vatRate: VatRate.STANDARD_21,
+        vatRate: VatRate.General,
         discountPercent: 10,
       };
 
@@ -164,7 +164,7 @@ describe('Invoice Models', () => {
         description: 'Test',
         quantity: 3,
         unitPrice: 33.33,
-        vatRate: VatRate.STANDARD_21,
+        vatRate: VatRate.General,
       };
 
       expect(calculateLineTotal(line)).toBe(99.99);
@@ -175,7 +175,7 @@ describe('Invoice Models', () => {
         description: 'Test',
         quantity: 1,
         unitPrice: 100,
-        vatRate: VatRate.STANDARD_21,
+        vatRate: VatRate.General,
         discountPercent: 100,
       };
 
@@ -187,7 +187,7 @@ describe('Invoice Models', () => {
         description: 'Test',
         quantity: 1.5,
         unitPrice: 10,
-        vatRate: VatRate.STANDARD_21,
+        vatRate: VatRate.General,
       };
 
       expect(calculateLineTotal(line)).toBe(15);
@@ -200,13 +200,13 @@ describe('Invoice Models', () => {
         'Test service',
         2,
         50,
-        VatRate.STANDARD_21
+        VatRate.General
       );
 
       expect(line.description).toBe('Test service');
       expect(line.quantity).toBe(2);
       expect(line.unitPrice).toBe(50);
-      expect(line.vatRate).toBe(VatRate.STANDARD_21);
+      expect(line.vatRate).toBe(VatRate.General);
       expect(line.lineTotal).toBe(100);
     });
 
@@ -215,7 +215,7 @@ describe('Invoice Models', () => {
         'Test service',
         1,
         100,
-        VatRate.STANDARD_21,
+        VatRate.General,
         20 // 20% discount
       );
 
@@ -228,7 +228,7 @@ describe('Invoice Models', () => {
         'Test service',
         1,
         100,
-        VatRate.STANDARD_21
+        VatRate.General
       );
 
       expect(line.discountPercent).toBeUndefined();
