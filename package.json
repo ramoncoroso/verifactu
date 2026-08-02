@@ -1,7 +1,7 @@
 {
   "name": "verifactu",
   "version": "1.0.0",
-  "description": "Production-ready TypeScript library for Spanish AEAT Verifactu invoice verification system",
+  "description": "TypeScript library for the Spanish AEAT Verifactu invoice reporting system",
   "keywords": [
     "verifactu",
     "aeat",
@@ -12,12 +12,17 @@
     "iva",
     "typescript"
   ],
-  "author": "",
+  "author": "Ramón Coroso",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/ramoncoroso/verifactu.git"
   },
+  "bugs": {
+    "url": "https://github.com/ramoncoroso/verifactu/issues"
+  },
+  "homepage": "https://github.com/ramoncoroso/verifactu#readme",
+  "sideEffects": false,
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -48,7 +53,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",
     "lint": "eslint src --ext .ts",
+    "lint:all": "eslint src tests --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "prepare": "husky install",
     "prepublishOnly": "npm run build"

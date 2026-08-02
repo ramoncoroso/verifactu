@@ -36,3 +36,7 @@ npm-debug.log*
 # Temp files
 *.tmp
 *.temp
+
+# Excepcion: material de prueba autofirmado, sin valor de seguridad (ver issue VF-019)
+!tests/fixtures/certs/
+!tests/fixtures/certs/**
