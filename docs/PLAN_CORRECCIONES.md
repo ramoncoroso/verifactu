@@ -361,12 +361,28 @@ oráculo escrito y esperando»: hay que reescribirlos dentro de la propia fase.
 
 ### Orden corregido
 
-| # | Trabajo | h | Motivo |
+> **Estado al 2026-08-02: los puntos 1 a 4 están hechos.** Ver `HANDOFF.md`.
+
+| # | Trabajo | h | Estado |
 |---|---|---:|---|
-| **1** | Tapar los agujeros de la red: fijar el huso, control negativo real, test `endpoints`↔WSDL, fixture de respuesta validado | ~1 | Sin esto la fase 1 no tiene criterio de aceptación y dos bloqueantes siguen sin oráculo |
-| **2** | Desarmar el release: `npmPublish: false` hasta que la puerta de conformidad esté verde, e **invertir la instrucción del `ROADMAP.md`** sobre `NPM_TOKEN` | ~1 | Es la única acción irreversible disponible en el repositorio |
-| **3** | Demoler `xml/templates/`, `validation/schema-validator.ts` y los tests anti-norma (fase 0.10) | ~8 | 2.099 líneas sin llamantes en producción, y 91 de los 169 errores de tipos. `schema-validator.ts` es una copia a mano del XSD: obliga a edición sincronizada en cada fase sin aportar oráculo |
-| **4** | Fase 1 enmendada, **con VF-007 dentro** | ~21 | VF-007 es un bloqueante de 2 h verificable contra un WSDL que ya está en el repositorio, y §6 lo sepulta en la fase 3 detrás de 81 h |
+| **1** | Tapar los agujeros de la red: fijar el huso, control negativo real, test `endpoints`↔WSDL, fixture de respuesta validado | ~1 | ✅ #71 |
+| **2** | Desarmar el release: `RELEASE_ENABLED` y `npmPublish: false`, e invertir la instrucción del `ROADMAP.md` | ~1 | ✅ #71 |
+| **3** | Demoler `xml/templates/` y los tests anti-norma | ~8 | ✅ #73 |
+| **4** | Formato unificado y huella conforme, **con VF-007 dentro** | ~21 | ✅ #72, #74 |
+| **5** | **El XML conforme** — árbol que escapa siempre, tabla de orden derivada del XSD, uniones discriminadas para los `choice` | ~45 | ⬜ siguiente |
+| **6** | **El parseo de respuestas** — el oráculo ya está escrito | ~7 | ⬜ |
+| **7** | **El QR** — independiente, paralelizable desde hoy | ~18 | ⬜ |
+
+Lo que quedó fuera de los puntos 1-4, y por qué:
+
+- **`schema-validator.ts` no se borró.** Son 407 líneas sin consumidores que
+  reimplementan el XSD a mano, pero borrarlas sustituye validación local previa al
+  envío por «que lo diga la AEAT». Es una decisión de producto: si la validación
+  local es un requisito, hay que **sustituirla** validando contra el XSD, no
+  borrarla. Sigue siendo un multiplicador de retrabajo mientras exista.
+- **VF-014 (tabla de CIF) tampoco.** No bloquea a nadie y es un `good first issue`
+  con matiz: la Orden EHA/451/2008 **no contiene** la tabla de controles que se le
+  atribuye, y las implementaciones de referencia discrepan.
 
 ### Correcciones al grafo de dependencias de §6
 
