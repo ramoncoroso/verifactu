@@ -6,7 +6,8 @@
  * endpoints a `example.com` no rompía ningún test**. `schemas/SistemaFacturacion.wsdl`
  * está vendorizado y contiene la verdad; nadie la estaba mirando.
  *
- * Es el oráculo de VF-007 (issue #17).
+ * Es el oráculo de VF-007 (issue #17), ya cerrado: este fichero pasó de
+ * documentar el defecto con `it.fails` a fijar el comportamiento correcto.
  */
 
 import { readFileSync } from 'node:fs';
@@ -15,9 +16,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
-  PRODUCTION_ENDPOINTS,
-  SANDBOX_ENDPOINTS,
+  getEndpoints,
+  getServiceUrl,
+  INITIAL_WAIT_SECONDS,
+  MAX_RECORDS_PER_SUBMISSION,
+  SOAP_ACTION_HEADER,
   SOAP_ACTIONS,
+  SOAP_OPERATIONS,
+  VERIFACTU_SERVICE_URLS,
 } from '../../src/client/endpoints.js';
 
 const WSDL = readFileSync(
@@ -66,42 +72,79 @@ describe('El WSDL vendorizado dice lo que creemos', () => {
   });
 });
 
-describe('endpoints.ts contra el WSDL · VF-007', () => {
-  // VF-007: apunta a `.../SistemaFacturacion/SuministroLR`, que es del SII.
-  it.fails('la URL de producción es la del WSDL [VF-007 abierto]', () => {
-    expect(PRODUCTION_ENDPOINTS.alta).toBe(portAddresses()['SistemaVerifactu']);
+describe('endpoints.ts contra el WSDL', () => {
+  it('la URL de producción es la del WSDL', () => {
+    expect(getServiceUrl('production')).toBe(portAddresses()['SistemaVerifactu']);
   });
 
-  it.fails('la URL de pruebas es la del WSDL [VF-007 abierto]', () => {
-    expect(SANDBOX_ENDPOINTS.alta).toBe(portAddresses()['SistemaVerifactuPruebas']);
+  it('la URL de pruebas es la del WSDL', () => {
+    expect(getServiceUrl('sandbox')).toBe(portAddresses()['SistemaVerifactuPruebas']);
   });
 
-  // No hay endpoint separado de consulta: las dos operaciones comparten puerto.
-  it.fails('la consulta usa la misma URL que el suministro [VF-007 abierto]', () => {
-    expect(SANDBOX_ENDPOINTS.consulta).toBe(SANDBOX_ENDPOINTS.alta);
+  it('la URL de sello de producción es la del WSDL', () => {
+    expect(getServiceUrl('production', 'seal')).toBe(portAddresses()['SistemaVerifactuSello']);
   });
 
-  // Ni de anulación: viaja como RegistroAnulacion dentro del mismo mensaje.
-  it('la anulación ya usa la misma URL que el alta', () => {
-    expect(SANDBOX_ENDPOINTS.anulacion).toBe(SANDBOX_ENDPOINTS.alta);
+  it('la URL de sello de pruebas es la del WSDL', () => {
+    expect(getServiceUrl('sandbox', 'seal')).toBe(portAddresses()['SistemaVerifactuSelloPruebas']);
   });
 
-  // VF-007: SOAP_ACTIONS declara operaciones del SII.
-  it.fails('la SOAPAction del suministro es la cadena vacía [VF-007 abierto]', () => {
-    expect(SOAP_ACTIONS.ALTA).toBe('');
+  it('el sello cambia de host, no de ruta', () => {
+    const repr = new URL(getServiceUrl('sandbox'));
+    const seal = new URL(getServiceUrl('sandbox', 'seal'));
+    expect(seal.pathname).toBe(repr.pathname);
+    expect(seal.host).not.toBe(repr.host);
   });
 
-  // Documenta el estado actual de forma afirmativa. Al corregir VF-007 hay que
-  // borrar este test, no actualizarlo.
-  it('hoy los endpoints son los del SII [VF-007 abierto]', () => {
-    expect(SANDBOX_ENDPOINTS.alta).toContain('/SuministroLR');
-    expect(SANDBOX_ENDPOINTS.alta).not.toContain('VerifactuSOAP');
-    expect(SOAP_ACTIONS.ALTA).toBe('SuministroLRFacturasEmitidas');
+  // No hay endpoint separado de consulta ni de anulación: las dos operaciones
+  // comparten binding y puerto, y la anulación viaja como RegistroAnulacion
+  // dentro del mismo mensaje de alta.
+  it('alta, anulación y consulta comparten URL', () => {
+    for (const env of ['production', 'sandbox'] as const) {
+      const e = getEndpoints(env);
+      expect(e.anulacion).toBe(e.alta);
+      expect(e.consulta).toBe(e.alta);
+      expect(e.alta).toBe(getServiceUrl(env));
+    }
   });
 
-  // Los hosts de sello no están modelados en absoluto.
-  it.fails('existe el host de sello para pruebas [VF-007 abierto]', () => {
-    const urls = Object.values({ ...PRODUCTION_ENDPOINTS, ...SANDBOX_ENDPOINTS });
-    expect(urls.some((u) => u.includes('prewww10.aeat.es'))).toBe(true);
+  // El WSDL declara soapAction="" y SOAP 1.1 exige que la cabecera esté presente
+  // con su valor entrecomillado. Son dos hechos distintos: el valor DECLARADO es
+  // la cadena vacía; el valor que viaja en la CABECERA es la cadena de dos
+  // comillas. La versión anterior de este test los confundía.
+  it('el WSDL declara soapAction vacía y la cabecera lleva la cadena entrecomillada', () => {
+    expect(soapActions().every((a) => a === '')).toBe(true);
+    expect(SOAP_ACTION_HEADER).toBe('""');
+    expect(SOAP_ACTIONS.ALTA).toBe(SOAP_ACTION_HEADER);
+    expect(SOAP_ACTIONS.ANULACION).toBe(SOAP_ACTION_HEADER);
+    expect(SOAP_ACTIONS.CONSULTA).toBe(SOAP_ACTION_HEADER);
+  });
+
+  it('ya no queda ninguna ruta del SII', () => {
+    const urls = Object.values(VERIFACTU_SERVICE_URLS).flatMap((e) => Object.values(e));
+    expect(urls).toHaveLength(4);
+    for (const u of urls) {
+      expect(u).toContain('/SistemaFacturacion/VerifactuSOAP');
+      expect(u).not.toContain('SuministroLR');
+      expect(u).not.toContain('ConsultaLR');
+    }
+  });
+
+  // Los nombres de operación del WSDL no son valores de SOAPAction: son el
+  // elemento raíz del cuerpo. Confundirlos es lo que produjo VF-007.
+  it('los nombres de operación coinciden con los del WSDL', () => {
+    expect(WSDL).toContain(`name="${SOAP_OPERATIONS.SUMINISTRO}"`);
+    expect(WSDL).toContain(`name="${SOAP_OPERATIONS.CONSULTA}"`);
+  });
+
+  // Constantes que salen del XSD y de la orden ministerial, y que hacen falta
+  // para el control de flujo y el envío por lotes (issues #22 y #36).
+  it('el máximo por envío es el del XSD', () => {
+    const xsd = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schemas', 'SuministroLR.xsd'),
+      'utf8'
+    );
+    expect(xsd).toContain(`maxOccurs="${MAX_RECORDS_PER_SUBMISSION}"`);
+    expect(INITIAL_WAIT_SECONDS).toBe(60);
   });
 });
