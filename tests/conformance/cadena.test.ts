@@ -68,6 +68,11 @@ function cliente(): VerifactuClient {
     environment: 'sandbox',
     certificate: { type: 'pfx', data: Buffer.from('x'), password: 'x' },
     software: SOFTWARE,
+    // Sin control de flujo: aquí se prueba el ENCADENAMIENTO, y la cadencia de
+    // 60 s del art. 16.2 —activa por defecto— dejaría cada test esperando un
+    // minuto entre envíos. La cadencia tiene sus propios tests en
+    // `control-flujo.test.ts`.
+    flowControl: false,
   });
   (c as unknown as { soapClient: unknown }).soapClient = soap;
   return c;
@@ -239,6 +244,7 @@ describe('Estado de la cadena · rehidratable', () => {
       certificate: { type: 'pfx', data: Buffer.from('x'), password: 'x' },
       software: SOFTWARE,
       chainState: guardado,
+      flowControl: false,
     });
     (c2 as unknown as { soapClient: unknown }).soapClient = soap;
     await c2.submitInvoice(factura('002'));
