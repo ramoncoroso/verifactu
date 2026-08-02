@@ -81,7 +81,7 @@
     "libxml2-wasm": "^0.7.1",
     "semantic-release": "^22.0.12",
     "tsup": "^8.0.0",
-    "typescript": "^5.3.0",
+    "typescript": "^7.0.2",
     "vitest": "^3.2.7"
   },
   "dependencies": {
