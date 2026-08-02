@@ -13,6 +13,8 @@ import { RecordChain } from '../crypto/chain.js';
 import type { ChainState } from '../crypto/chain.js';
 import { SoapClient, createSoapClient } from './soap-client.js';
 import { getEndpoints, SOAP_ACTIONS, type Environment, type ServiceEndpoints } from './endpoints.js';
+import { MAX_RECORDS_PER_SUBMISSION } from './endpoints.js';
+import { SubmissionPacer, type PacerState, type SubmissionPacerOptions } from './pacer.js';
 import { buildNumSerieFactura, formatAeatDate } from '../format/aeat.js';
 import {
   assertAltaEmisible,
@@ -23,7 +25,10 @@ import {
 import {
   buildRegFactuSistemaFacturacion,
   wrapSoapEnvelope,
+  type RegistroInput,
 } from '../xml/verifactu/registro.js';
+import { ErrorCode } from '../errors/base-error.js';
+import { ValidationError } from '../errors/validation-errors.js';
 import {
   fueAceptado,
   parseConsultaResponse as parseConsulta,
@@ -60,7 +65,24 @@ export interface VerifactuClientConfig {
   queueTimeout?: number;
   /** Logger for debugging and monitoring (default: noop) */
   logger?: Logger;
+  /**
+   * Control de flujo del art. 16.2 de la OM HAC/1177/2024.
+   *
+   * **Activo por defecto**, con los 60 s que fija la norma: es un «deberán
+   * implementar», no una recomendación, y la AEAT dispone de un mecanismo de
+   * suspensión temporal del acceso. Se puede desactivar con `false` si la
+   * cadencia se gobierna fuera de la librería —una cola compartida entre varios
+   * procesos, por ejemplo—, pero entonces la responsabilidad es de quien lo
+   * desactiva.
+   *
+   * Para no perder la cadencia al reiniciar, persiste `getFlowControlState()` y
+   * devuélvelo aquí en `state`.
+   */
+  flowControl?: FlowControlOptions | false;
 }
+
+/** Opciones del control de flujo. Ver {@link SubmissionPacer}. */
+export type FlowControlOptions = SubmissionPacerOptions;
 
 /**
  * Submit invoice response
@@ -91,6 +113,27 @@ export interface SubmitInvoiceResponse {
   errorDescription?: string;
   /** Processed invoice with hash */
   invoice: Invoice & { hash: string };
+}
+
+/**
+ * Resultado de un envío por lotes.
+ *
+ * `estadoEnvio` es global y **no sirve para decidir nada por registro**:
+ * `ParcialmenteCorrecto` no implica que haya rechazos —basta un
+ * `AceptadoConErrores`—, así que la decisión se toma con el `state` de cada
+ * resultado.
+ */
+export interface SubmitBatchResponse {
+  /** Un resultado por factura, en el orden en que se enviaron. */
+  readonly results: readonly SubmitInvoiceResponse[];
+  /** Estado global del envío. */
+  readonly estadoEnvio: EstadoEnvio;
+  /** Segundos a esperar antes del siguiente envío (art. 16.2). */
+  readonly tiempoEsperaEnvioSeconds: number;
+  /** CSV del envío, si se generó. */
+  csv?: string;
+  /** Sello temporal de la AEAT. */
+  timestampPresentacion?: Date;
 }
 
 /**
@@ -149,6 +192,8 @@ export class VerifactuClient {
   private readonly software: SoftwareInfo;
   private readonly retryOptions?: RetryOptions;
   private readonly concurrencyLimiter: ConcurrencyLimiter;
+  /** `undefined` solo si se ha desactivado explícitamente. */
+  private readonly pacer: SubmissionPacer | undefined;
   private readonly logger: Logger;
 
   constructor(config: VerifactuClientConfig) {
@@ -167,7 +212,25 @@ export class VerifactuClient {
       maxConcurrency: config.maxConcurrency,
       queueTimeout: config.queueTimeout,
     });
+    this.pacer =
+      config.flowControl === false ? undefined : new SubmissionPacer(config.flowControl ?? {});
     this.logger = config.logger ?? noopLogger;
+  }
+
+  /**
+   * Ejecuta un envío respetando la cadencia del art. 16.2.
+   *
+   * El hueco se consume **antes** de la petición y no se devuelve si esta
+   * falla: la norma cuenta «desde el anterior envío», no desde la respuesta.
+   */
+  private async enviar<T>(operacion: () => Promise<T>): Promise<T> {
+    if (this.pacer) await this.pacer.acquire();
+    return this.concurrencyLimiter.execute(operacion);
+  }
+
+  /** Estado del control de flujo, para persistirlo entre procesos. */
+  getFlowControlState(): PacerState {
+    return this.pacer?.getState() ?? { waitSeconds: 0 };
   }
 
   /**
@@ -205,10 +268,11 @@ export class VerifactuClient {
     startTime: number
   ): Promise<SubmitInvoiceResponse> {
     try {
-      const response = await this.concurrencyLimiter.execute(() =>
+      const response = await this.enviar(() =>
         this.soapClient.send(this.endpoints.alta, SOAP_ACTIONS.ALTA, body)
       );
       const result = this.parseAltaResponse(response.xml, processed);
+      this.pacer?.updateFromResponse(result.tiempoEsperaEnvioSeconds);
       const durationMs = Date.now() - startTime;
 
       if (result.accepted) {
@@ -269,6 +333,121 @@ export class VerifactuClient {
   }
 
   /**
+   * Registra un lote de facturas en **una sola** petición.
+   *
+   * Es la otra rama del art. 16.2: «deberá esperar a que transcurran "t"
+   * segundos desde el anterior envío **o** deberá esperar a tener acumulados un
+   * número de registros igual al límite establecido […], la circunstancia que
+   * ocurra primero». Sin API de lote esa rama era inalcanzable y el caudal
+   * quedaba en una factura cada «t» segundos.
+   *
+   * El límite son {@link MAX_RECORDS_PER_SUBMISSION} registros, el
+   * `maxOccurs="1000"` del `SuministroLR.xsd`.
+   *
+   * Las facturas se validan **todas** antes de tocar la cadena: un lote que
+   * falla a medias dejaría registros generados sin enviar.
+   */
+  async submitInvoices(invoices: readonly Invoice[]): Promise<SubmitBatchResponse> {
+    const startTime = Date.now();
+
+    if (invoices.length === 0) {
+      throw new ValidationError(
+        'Un envío debe llevar al menos un registro',
+        ErrorCode.VALIDATION_ERROR,
+        { field: 'invoices' }
+      );
+    }
+    if (invoices.length > MAX_RECORDS_PER_SUBMISSION) {
+      throw new ValidationError(
+        `Un envío admite como máximo ${MAX_RECORDS_PER_SUBMISSION} registros (llegaron ${invoices.length})`,
+        ErrorCode.VALIDATION_ERROR,
+        { field: 'invoices' }
+      );
+    }
+
+    // Todo o nada: si una factura no es emisible, ninguna entra en la cadena.
+    for (const invoice of invoices) assertAltaEmisible(invoice);
+
+    this.logger.info('Submitting invoice batch', {
+      operation: 'submitInvoices',
+      recordCount: invoices.length,
+      issuerNif: invoices[0]!.issuer.taxId.value.slice(-4),
+    });
+
+    const timestamp = new Date();
+    const registros: RegistroInput[] = [];
+    const procesadas: (Invoice & { hash: string })[] = [];
+
+    for (const invoice of invoices) {
+      const isFirst = this.chain.isFirstRecord();
+      const processed = this.chain.processInvoice(invoice, timestamp);
+      procesadas.push(processed);
+      registros.push({
+        alta: mapInvoiceToRegistroAlta(
+          processed,
+          this.software,
+          processed.chainReference?.previousHash ?? '',
+          timestamp,
+          processed.hash,
+          { isFirstRecord: isFirst }
+        ),
+      });
+    }
+
+    const body = wrapSoapEnvelope(
+      buildRegFactuSistemaFacturacion(mapCabecera(invoices[0]!.issuer), registros)
+    );
+
+    const response = await this.enviar(() =>
+      this.soapClient.send(this.endpoints.alta, SOAP_ACTIONS.ALTA, body)
+    );
+    const parsed = parseSuministroResponse(response.xml);
+    this.pacer?.updateFromResponse(parsed.tiempoEsperaEnvioSeconds);
+
+    const results = procesadas.map((processed, i) => {
+      // Se casa por IDFactura, que es lo que devuelve la AEAT; el índice es solo
+      // la red de seguridad para una respuesta que no las traiga.
+      const numSerie = buildNumSerieFactura(processed.id);
+      const linea =
+        parsed.lineas.find((l) => l.idFactura?.numSerieFactura === numSerie) ?? parsed.lineas[i];
+
+      const out: SubmitInvoiceResponse = {
+        accepted: linea === undefined ? false : fueAceptado(linea),
+        state: linea?.estadoRegistro ?? 'Incorrecto',
+        estadoEnvio: parsed.estadoEnvio,
+        tiempoEsperaEnvioSeconds: parsed.tiempoEsperaEnvioSeconds,
+        invoice: processed,
+      };
+      if (parsed.csv !== undefined) out.csv = parsed.csv;
+      if (parsed.timestampPresentacion !== undefined) {
+        out.timestampPresentacion = parsed.timestampPresentacion;
+      }
+      if (linea?.codigoError !== undefined) out.errorCode = linea.codigoError;
+      if (linea?.descripcionError !== undefined) out.errorDescription = linea.descripcionError;
+      if (linea?.registroDuplicado !== undefined) out.alreadyRegistered = linea.registroDuplicado;
+      return out;
+    });
+
+    this.logger.info('Invoice batch submitted', {
+      operation: 'submitInvoices',
+      recordCount: invoices.length,
+      state: parsed.estadoEnvio,
+      durationMs: Date.now() - startTime,
+    });
+
+    const salida: SubmitBatchResponse = {
+      results,
+      estadoEnvio: parsed.estadoEnvio,
+      tiempoEsperaEnvioSeconds: parsed.tiempoEsperaEnvioSeconds,
+    };
+    if (parsed.csv !== undefined) salida.csv = parsed.csv;
+    if (parsed.timestampPresentacion !== undefined) {
+      salida.timestampPresentacion = parsed.timestampPresentacion;
+    }
+    return salida;
+  }
+
+  /**
    * Cancel an invoice
    */
   /** Genera el registro de anulación y su XML. Se llama una sola vez. */
@@ -295,10 +474,11 @@ export class VerifactuClient {
     startTime: number
   ): Promise<SubmitCancellationResponse> {
     try {
-      const response = await this.concurrencyLimiter.execute(() =>
+      const response = await this.enviar(() =>
         this.soapClient.send(this.endpoints.anulacion, SOAP_ACTIONS.ANULACION, body)
       );
       const result = this.parseAnulacionResponse(response.xml, processed);
+      this.pacer?.updateFromResponse(result.tiempoEsperaEnvioSeconds);
       const durationMs = Date.now() - startTime;
 
       if (result.accepted) {

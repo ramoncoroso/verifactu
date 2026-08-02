@@ -129,8 +129,8 @@ export const MAX_RECORDS_PER_SUBMISSION = 1000;
  * Tiempo de espera inicial entre envíos, en segundos.
  *
  * Valor que fija el art. 16.2 de la OM HAC/1177/2024. La AEAT devuelve un valor
- * actualizado en cada respuesta (`TiempoEsperaEnvio`), que la librería todavía no
- * lee.
+ * actualizado en cada respuesta (`TiempoEsperaEnvio`), que el
+ * {@link SubmissionPacer} aplica al siguiente envío.
  */
 export const INITIAL_WAIT_SECONDS = 60;
 
