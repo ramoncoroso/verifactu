@@ -16,6 +16,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Va primero a propósito: es la única capa que compara la salida de la librería
+  # con una fuente EXTERNA (los XSD y los vectores publicados por la AEAT) en vez
+  # de consigo misma. Ver la issue VF-018.
+  conformance:
+    name: Conformidad AEAT
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Los esquemas están congelados por hash. Si la AEAT publica una revisión,
+      # este paso falla y obliga a revisar el diff en lugar de arrastrarlo en
+      # silencio. No hace red: solo compara lo vendorizado con CHECKSUMS.txt.
+      - name: Verificar integridad de los esquemas oficiales
+        run: npm run schemas:check
+
+      - name: Tests de conformidad
+        run: npm run test:conformance
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
