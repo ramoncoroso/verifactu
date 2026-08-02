@@ -2,12 +2,41 @@
  * Tax-related models for Verifactu
  */
 
-import type { ExemptionCause, NonSubjectCause, VatRate, EquivalenceSurchargeRate } from './enums.js';
+import type {
+  CalificacionOperacion,
+  EquivalenceSurchargeRate,
+  ExemptionCause,
+  Impuesto,
+  NonSubjectCause,
+  OperationRegime,
+  VatRate,
+} from './enums.js';
+
+/**
+ * Campos que el XSD sitúa en `DetalleType`, es decir **por línea**.
+ *
+ * Estaban cableados a `01`/`S1`/`01` y `Invoice.operationRegimes` no llegaba
+ * jamás al XML, así que un arrendamiento de local (clave 11), una exportación
+ * (02) o una operación con inversión del sujeto pasivo (S2) eran inexpresables:
+ * el valor se descartaba en silencio y se declaraba régimen general lo que no
+ * lo era.
+ *
+ * Todos son opcionales y conservan el valor por defecto anterior.
+ */
+interface LineaDesgloseComun {
+  /**
+   * `ClaveRegimen` (L8A/L8B). Por defecto, el primero de
+   * `Invoice.operationRegimes` y, en su ausencia, `'01'` (régimen general).
+   */
+  readonly regime?: OperationRegime;
+  /** `Impuesto`. Por defecto `'01'` (IVA). */
+  readonly tax?: Impuesto;
+}
 
 /**
  * VAT breakdown item (Desglose IVA)
  */
-export interface VatBreakdown {
+export interface VatBreakdown extends LineaDesgloseComun {
   /** Tax base amount */
   readonly taxBase: number;
   /** VAT rate percentage */
@@ -18,12 +47,22 @@ export interface VatBreakdown {
   readonly equivalenceSurchargeRate?: EquivalenceSurchargeRate;
   /** Equivalence surcharge amount */
   readonly equivalenceSurchargeAmount?: number;
+  /**
+   * `CalificacionOperacion`. Por defecto `'S1'` (sujeta y no exenta sin
+   * inversión del sujeto pasivo). Con `'S2'`, tipo y cuota han de ser 0.
+   */
+  readonly qualification?: CalificacionOperacion;
+  /**
+   * `BaseImponibleACoste`. Obligatorio con el régimen `06` (grupo de entidades,
+   * nivel avanzado) y solo admisible ahí o con `Impuesto` `02`/`05`.
+   */
+  readonly costBase?: number;
 }
 
 /**
  * Exempt operation breakdown
  */
-export interface ExemptBreakdown {
+export interface ExemptBreakdown extends LineaDesgloseComun {
   /** Exemption cause */
   readonly cause: ExemptionCause;
   /** Tax base amount */
@@ -33,7 +72,7 @@ export interface ExemptBreakdown {
 /**
  * Non-subject operation breakdown
  */
-export interface NonSubjectBreakdown {
+export interface NonSubjectBreakdown extends LineaDesgloseComun {
   /** Non-subject cause */
   readonly cause: NonSubjectCause;
   /** Amount */
