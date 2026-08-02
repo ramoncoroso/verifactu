@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*", "tests/**/*"],
+  // El tsconfig principal excluye **/*.test.ts porque son la entrada del build.
+  // Aquí hay que reponerlos: el objetivo es justamente comprobarlos.
+  "exclude": ["node_modules", "dist"]
+}

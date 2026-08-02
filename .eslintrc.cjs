@@ -2,7 +2,8 @@ module.exports = {
   root: true,
   parser: '@typescript-eslint/parser',
   parserOptions: {
-    project: './tsconfig.json',
+    // tsconfig.test.json cubre src y tests; el principal excluye los tests
+    project: ['./tsconfig.json', './tsconfig.test.json'],
     ecmaVersion: 2022,
     sourceType: 'module',
   },
