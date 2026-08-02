@@ -2,7 +2,7 @@
  * Tests for Hash Functions
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   sha256,
   sha256Hex,
@@ -251,6 +251,36 @@ describe('Hash Functions', () => {
 
       const hash = calculateInvoiceHash(invoice, '', new Date());
       expect(typeof hash).toBe('string');
+    });
+  });
+
+
+  describe('formatTimestamp (via buildAltaHashInput)', () => {
+    it('formats fractional eastern timezone offsets (UTC+5:30) correctly', () => {
+      // getTimezoneOffset returns minutes west of UTC; India is -330.
+      // Math.floor before Math.abs incorrectly yields +06:30 instead of +05:30.
+      const generationTimestamp = new Date('2024-06-01T12:00:00.000Z');
+      vi.spyOn(generationTimestamp, 'getTimezoneOffset').mockReturnValue(-330);
+      vi.spyOn(generationTimestamp, 'getFullYear').mockReturnValue(2024);
+      vi.spyOn(generationTimestamp, 'getMonth').mockReturnValue(5); // June
+      vi.spyOn(generationTimestamp, 'getDate').mockReturnValue(1);
+      vi.spyOn(generationTimestamp, 'getHours').mockReturnValue(17);
+      vi.spyOn(generationTimestamp, 'getMinutes').mockReturnValue(30);
+      vi.spyOn(generationTimestamp, 'getSeconds').mockReturnValue(0);
+
+      const input = buildAltaHashInput({
+        issuerNif: 'B12345678',
+        invoiceNumber: 'A001',
+        issueDate: new Date('2024-06-01'),
+        invoiceType: 'F1',
+        vatTotal: 21,
+        totalAmount: 121,
+        previousHash: '',
+        generationTimestamp,
+      });
+
+      expect(input).toContain('FechaHoraHusoGenRegistro=2024-06-01T17:30:00+05:30');
+      expect(input).not.toContain('+06:30');
     });
   });
 

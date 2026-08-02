@@ -211,10 +211,11 @@ function formatTimestamp(date: Date): string {
   const minutes = date.getMinutes().toString().padStart(2, '0');
   const seconds = date.getSeconds().toString().padStart(2, '0');
 
-  // Get timezone offset
+  // Get timezone offset (abs before hour division so fractional eastern zones stay correct)
   const offsetMinutes = date.getTimezoneOffset();
-  const offsetHours = Math.abs(Math.floor(offsetMinutes / 60));
-  const offsetMins = Math.abs(offsetMinutes % 60);
+  const absoluteOffset = Math.abs(offsetMinutes);
+  const offsetHours = Math.floor(absoluteOffset / 60);
+  const offsetMins = absoluteOffset % 60;
   const offsetSign = offsetMinutes <= 0 ? '+' : '-';
   const timezone = `${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMins.toString().padStart(2, '0')}`;
 
