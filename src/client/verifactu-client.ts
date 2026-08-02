@@ -15,6 +15,7 @@ import { SoapClient, createSoapClient } from './soap-client.js';
 import { getEndpoints, SOAP_ACTIONS, type Environment, type ServiceEndpoints } from './endpoints.js';
 import { buildNumSerieFactura, formatAeatDate } from '../format/aeat.js';
 import {
+  assertAltaEmisible,
   mapCabecera,
   mapCancellationToRegistroAnulacion,
   mapInvoiceToRegistroAlta,
@@ -185,6 +186,11 @@ export class VerifactuClient {
     processed: Invoice & { hash: string };
     body: string;
   } {
+    // Antes de nada: si la factura no puede convertirse en un registro válido,
+    // se rechaza SIN tocar la cadena. Validar después de `processInvoice`
+    // dejaba el estado apuntando a un registro que no llegó a generarse.
+    assertAltaEmisible(invoice);
+
     const timestamp = new Date();
     const isFirst = this.chain.isFirstRecord();
     const processed = this.chain.processInvoice(invoice, timestamp);

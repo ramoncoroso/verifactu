@@ -68,23 +68,188 @@ export function mapSistemaInformatico(s: SoftwareInfo): SistemaInformaticoInput 
   };
 }
 
+/** Valores de `ClaveRegimen` que declara el XSD. No existen 12, 13 ni 16. */
+const CLAVES_REGIMEN = new Set([
+  '01', '02', '03', '04', '05', '06', '07', '08', '09', '10',
+  '11', '14', '15', '17', '18', '19', '20', '21',
+]);
+
+/**
+ * Impuestos para los que la AEAT exige `ClaveRegimen`, y solo esos.
+ *
+ * Error 1245: «Si el campo Impuesto está vacío o tiene valor IVA(01) o IPSI(02)
+ * o IGIC(03) el campo ClaveRegimen debe de estar cumplimentado». Error 1260, su
+ * recíproco: «El campo ClaveRegimen solo debe de estar cumplimentado si…».
+ */
+const IMPUESTOS_CON_REGIMEN = new Set(['01', '02', '03']);
+
+function rechaza(mensaje: string, field: string): never {
+  throw new ValidationError(mensaje, ErrorCode.VALIDATION_ERROR, { field });
+}
+
+/**
+ * Coherencia entre `ClaveRegimen`, `CalificacionOperacion`, `OperacionExenta`,
+ * `TipoImpositivo` e `Impuesto`.
+ *
+ * No es interpretación: cada regla es una validación que la AEAT publica en
+ * `errores.properties` y que, de incumplirse, provoca el **rechazo del
+ * registro**. Comprobarlas aquí convierte un rechazo remoto —con la huella ya
+ * impresa en la factura— en un error local antes de generar nada.
+ */
+function validarLinea(
+  invoice: Invoice,
+  linea: {
+    regimen: string | undefined;
+    impuesto: string;
+    calificacion?: string;
+    exenta?: string;
+    tipoImpositivo?: number;
+    baseACoste?: number;
+  }
+): void {
+  const { regimen, impuesto, calificacion, exenta } = linea;
+
+  if (regimen !== undefined && !CLAVES_REGIMEN.has(regimen)) {
+    // Error 1246.
+    rechaza(
+      `ClaveRegimen «${regimen}» no existe: el XSD solo declara ${[...CLAVES_REGIMEN].join(', ')}`,
+      'taxBreakdown.regime'
+    );
+  }
+
+  // Error 1245 · el régimen es obligatorio para IVA, IPSI e IGIC.
+  if (IMPUESTOS_CON_REGIMEN.has(impuesto) && regimen === undefined) {
+    rechaza(`ClaveRegimen es obligatoria con Impuesto ${impuesto}`, 'taxBreakdown.regime');
+  }
+
+  // Error 1252 · el 08 es «operaciones sujetas al IPSI/IGIC», no sujetas a IVA
+  // por reglas de localización.
+  if (regimen === '08' && calificacion !== 'N2') {
+    rechaza(
+      'Con ClaveRegimen 08 la CalificacionOperacion debe ser N2 (no sujeta por reglas de localización)',
+      'taxBreakdown.qualification'
+    );
+  }
+
+  // Error 1200 · bienes usados, objetos de arte y antigüedades.
+  if (regimen === '03' && calificacion !== 'S1') {
+    rechaza('Con ClaveRegimen 03 la CalificacionOperacion solo puede ser S1', 'taxBreakdown.qualification');
+  }
+
+  // Error 1201 · oro de inversión.
+  if (regimen === '04' && exenta === undefined && calificacion !== 'S2') {
+    rechaza(
+      'Con ClaveRegimen 04 la operación debe ser S2 o exenta',
+      'taxBreakdown.qualification'
+    );
+  }
+
+  // Error 1203 · criterio de caja.
+  if (regimen === '07') {
+    if (exenta !== undefined && ['E2', 'E3', 'E4', 'E5'].includes(exenta)) {
+      rechaza(`Con ClaveRegimen 07 la OperacionExenta no puede ser ${exenta}`, 'taxBreakdown.cause');
+    }
+    if (calificacion !== undefined && ['S2', 'N1', 'N2'].includes(calificacion)) {
+      rechaza(
+        `Con ClaveRegimen 07 la CalificacionOperacion no puede ser ${calificacion}`,
+        'taxBreakdown.qualification'
+      );
+    }
+  }
+
+  // Error 1205 · cobros por cuenta de terceros de honorarios profesionales.
+  if (regimen === '10') {
+    if (calificacion !== 'N1') {
+      rechaza('Con ClaveRegimen 10 la CalificacionOperacion debe ser N1', 'taxBreakdown.qualification');
+    }
+    if (invoice.invoiceType !== 'F1') {
+      rechaza('Con ClaveRegimen 10 el TipoFactura debe ser F1', 'invoiceType');
+    }
+    if (!invoice.recipients?.some((r) => r.taxId.type === 'NIF')) {
+      rechaza('Con ClaveRegimen 10 el destinatario debe identificarse mediante NIF', 'recipients');
+    }
+  }
+
+  // Error 1206 · arrendamiento de local de negocio.
+  if (regimen === '11' && linea.tipoImpositivo !== 21) {
+    rechaza('Con ClaveRegimen 11 el TipoImpositivo ha de ser 21', 'taxBreakdown.vatRate');
+  }
+
+  // Error 1199 · en régimen general no caben las exenciones por entregas
+  // intracomunitarias (E2) ni por exportación (E3).
+  if (
+    regimen === '01' &&
+    (impuesto === '01' || impuesto === '03') &&
+    (exenta === 'E2' || exenta === 'E3')
+  ) {
+    rechaza(
+      `Con ClaveRegimen 01 e Impuesto ${impuesto} la OperacionExenta no puede ser ${exenta}`,
+      'taxBreakdown.cause'
+    );
+  }
+
+  // Errores 1198 y 1207 · con inversión del sujeto pasivo o sin sujeción, la
+  // cuota repercutida es cero por definición.
+  if (calificacion !== undefined && calificacion !== 'S1' && (linea.tipoImpositivo ?? 0) !== 0) {
+    rechaza(
+      `Con CalificacionOperacion ${calificacion} el TipoImpositivo y la CuotaRepercutida deben ser 0`,
+      'taxBreakdown.vatRate'
+    );
+  }
+
+  // Error 1202 · grupo de entidades, nivel avanzado.
+  if (regimen === '06') {
+    if (linea.baseACoste === undefined) {
+      rechaza('Con ClaveRegimen 06 la BaseImponibleACoste es obligatoria', 'taxBreakdown.costBase');
+    }
+    if (['F2', 'F3', 'R5'].includes(invoice.invoiceType)) {
+      rechaza(`Con ClaveRegimen 06 el TipoFactura no puede ser ${invoice.invoiceType}`, 'invoiceType');
+    }
+  }
+
+  // Error 1257 · la base a coste no cabe en ningún otro sitio.
+  if (linea.baseACoste !== undefined && regimen !== '06' && impuesto !== '02' && impuesto !== '05') {
+    rechaza(
+      'BaseImponibleACoste solo se admite con ClaveRegimen 06 o Impuesto 02/05',
+      'taxBreakdown.costBase'
+    );
+  }
+}
+
 /**
  * Desglose completo: IVA, exentas y no sujetas.
  *
  * Las dos últimas se descartaban en silencio, de modo que el `ImporteTotal` no
- * cuadraba con lo declarado.
+ * cuadraba con lo declarado. Y `ClaveRegimen`, `CalificacionOperacion` e
+ * `Impuesto` iban cableados pese a que el XSD los sitúa **por línea**.
  */
 export function mapDesglose(invoice: Invoice): DetalleDesgloseInput[] {
   const lineas: DetalleDesgloseInput[] = [];
-  const regimen = invoice.operationRegimes?.[0] ?? '01';
+  const regimenFactura = invoice.operationRegimes?.[0] ?? '01';
+
+  /** Régimen efectivo de la línea, u omitido si el impuesto no lo admite. */
+  const claveRegimen = (impuesto: string, propio: string | undefined): string | undefined =>
+    IMPUESTOS_CON_REGIMEN.has(impuesto) ? (propio ?? regimenFactura) : undefined;
 
   for (const v of invoice.taxBreakdown.vatBreakdowns ?? []) {
-    const linea: DetalleDesgloseInput = {
-      impuesto: '01',
-      claveRegimen: regimen,
-      calificacionOperacion: 'S1',
+    const impuesto = v.tax ?? '01';
+    const regimen = claveRegimen(impuesto, v.regime);
+    const calificacion = v.qualification ?? 'S1';
+    validarLinea(invoice, {
+      regimen,
+      impuesto,
+      calificacion,
+      tipoImpositivo: v.vatRate,
+      ...(v.costBase === undefined ? {} : { baseACoste: v.costBase }),
+    });
+
+    lineas.push({
+      impuesto,
+      ...(regimen === undefined ? {} : { claveRegimen: regimen }),
+      calificacionOperacion: calificacion,
       tipoImpositivo: formatAeatRate(v.vatRate),
       baseImponibleOimporteNoSujeto: formatAeatAmount(v.taxBase),
+      ...(v.costBase === undefined ? {} : { baseImponibleACoste: formatAeatAmount(v.costBase) }),
       cuotaRepercutida: formatAeatAmount(v.vatAmount),
       ...(v.equivalenceSurchargeRate !== undefined && v.equivalenceSurchargeAmount !== undefined
         ? {
@@ -92,28 +257,36 @@ export function mapDesglose(invoice: Invoice): DetalleDesgloseInput[] {
             cuotaRecargoEquivalencia: formatAeatAmount(v.equivalenceSurchargeAmount),
           }
         : {}),
-    };
-    lineas.push(linea);
+    });
   }
 
   for (const e of invoice.taxBreakdown.exemptBreakdowns ?? []) {
+    const impuesto = e.tax ?? '01';
+    const regimen = claveRegimen(impuesto, e.regime);
+    validarLinea(invoice, { regimen, impuesto, exenta: e.cause });
+
     // `CalificacionOperacion` y `OperacionExenta` son un `<choice>`: emitir los
     // dos era inválido. Y en una línea exenta no se emite `CuotaRepercutida`.
     lineas.push({
-      impuesto: '01',
-      claveRegimen: regimen,
+      impuesto,
+      ...(regimen === undefined ? {} : { claveRegimen: regimen }),
       operacionExenta: e.cause,
       baseImponibleOimporteNoSujeto: formatAeatAmount(e.taxBase),
     });
   }
 
   for (const n of invoice.taxBreakdown.nonSubjectBreakdowns ?? []) {
+    const impuesto = n.tax ?? '01';
+    const regimen = claveRegimen(impuesto, n.regime);
+    const calificacion = n.cause === 'N2' ? 'N2' : 'N1';
+    validarLinea(invoice, { regimen, impuesto, calificacion });
+
     // No existe ningún elemento `OperacionNoSujeta`: la no sujeción se expresa
     // con `CalificacionOperacion` N1 o N2.
     lineas.push({
-      impuesto: '01',
-      claveRegimen: regimen,
-      calificacionOperacion: n.cause === 'N2' ? 'N2' : 'N1',
+      impuesto,
+      ...(regimen === undefined ? {} : { claveRegimen: regimen }),
+      calificacionOperacion: calificacion,
       baseImponibleOimporteNoSujeto: formatAeatAmount(n.amount),
     });
   }
@@ -139,6 +312,19 @@ function descripcionObligatoria(invoice: Invoice): string {
     );
   }
   return d.slice(0, 500);
+}
+
+/**
+ * Comprueba que la factura puede convertirse en un registro de alta válido.
+ *
+ * Se invoca **antes** de calcular la huella y mover la cadena. Antes se validaba
+ * al construir el XML, es decir después: una factura que no se podía serializar
+ * dejaba la cadena apuntando a un registro que no llegó a generarse, y la
+ * siguiente encadenaba contra un fantasma.
+ */
+export function assertAltaEmisible(invoice: Invoice): void {
+  descripcionObligatoria(invoice);
+  mapDesglose(invoice);
 }
 
 function encadenamiento(invoice: Invoice, isFirst: boolean): EncadenamientoInput {
