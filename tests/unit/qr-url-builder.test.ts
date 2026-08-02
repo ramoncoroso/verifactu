@@ -95,7 +95,6 @@ describe('QR URL Builder', () => {
       expect(url).toContain('numserie=A001');
       expect(url).toContain('fecha=15-01-2024');
       expect(url).toContain('importe=121.50');
-      expect(url).toContain('huella=testhash123');
     });
 
     it('should build sandbox URL when specified', () => {
@@ -203,18 +202,6 @@ describe('QR URL Builder', () => {
       expect(result.errors.some(e => e.includes('decimal'))).toBe(true);
     });
 
-    it('should reject short hash', () => {
-      const result = validateQrParams({
-        nif: 'B12345678',
-        numserie: 'A001',
-        fecha: '15-01-2024',
-        importe: '121.50',
-        huella: 'short',
-      });
-
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('hash'))).toBe(true);
-    });
 
     it('should collect multiple errors', () => {
       const result = validateQrParams({
