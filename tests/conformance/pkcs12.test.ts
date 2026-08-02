@@ -35,7 +35,7 @@ import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { validateCertificate } from '../../src/crypto/certificate.js';
+import { esPkcs12Heredado, validateCertificate } from '../../src/crypto/certificate.js';
 import { CertificateError } from '../../src/errors/crypto-errors.js';
 
 const CERTS = join(dirname(fileURLToPath(import.meta.url)), '../fixtures/certs');
@@ -85,6 +85,27 @@ describe('PKCS#12 heredado (RC2-40) con la contraseña correcta', () => {
   it('el mensaje trae también el paliativo, marcado como tal', () => {
     expect(error().message).toContain('--openssl-legacy-provider');
   });
+});
+
+describe('La forma del error depende de la versión de Node', () => {
+  // El mismo `.p12`, tres respuestas distintas. Node 18 es el que rompió la
+  // primera versión de la detección: devuelve la palabra «unsupported» a secas,
+  // sin código. Estos vectores están medidos, no supuestos.
+  it.each([
+    ['Node 22.22.1 · OpenSSL 3.5.5', 'ERR_CRYPTO_UNSUPPORTED_OPERATION', 'Unsupported PKCS12 PFX data'],
+    ['Node 20.20.2 · OpenSSL 3.0.19', 'ERR_CRYPTO_UNSUPPORTED_OPERATION', 'Unsupported PKCS12 PFX data'],
+    ['Node 18.20.8 · OpenSSL 3.0.16', undefined, 'unsupported'],
+  ])('%s se detecta', (_v, code, message) => {
+    const e = Object.assign(new Error(message), code === undefined ? {} : { code });
+    expect(esPkcs12Heredado(e)).toBe(true);
+  });
+
+  it.each(['mac verify failure', 'not enough data', 'unsupported certificate purpose'])(
+    '«%s» NO se confunde con cifrado heredado',
+    (message) => {
+      expect(esPkcs12Heredado(new Error(message))).toBe(false);
+    }
+  );
 });
 
 describe('Contraseña incorrecta', () => {

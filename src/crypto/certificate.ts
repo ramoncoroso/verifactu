@@ -301,12 +301,25 @@ export function certificateErrorFor(error: unknown): CertificateError {
 /**
  * Si el fallo se debe a un PKCS#12 cifrado con algoritmos que OpenSSL 3 ya no
  * ofrece en su proveedor por defecto (RC2, RC4).
+ *
+ * **La forma del error depende de la versión.** Medido con el mismo `.p12`:
+ *
+ * | Node · OpenSSL | `err.code` | `err.message` |
+ * |---|---|---|
+ * | 22.22.1 · 3.5.5 | `ERR_CRYPTO_UNSUPPORTED_OPERATION` | `Unsupported PKCS12 PFX data` |
+ * | 20.20.2 · 3.0.19 | `ERR_CRYPTO_UNSUPPORTED_OPERATION` | `Unsupported PKCS12 PFX data` |
+ * | 18.20.8 · 3.0.16 | *(ninguno)* | `unsupported` |
+ *
+ * De ahí el `^unsupported$`: en Node 18 el mensaje es esa palabra y nada más.
+ * Se ancla para no tragarse cualquier frase que la contenga.
  */
 export function esPkcs12Heredado(error: unknown): boolean {
   const err = error as NodeJS.ErrnoException & { message?: string };
+  const mensaje = err?.message ?? '';
   return (
     err?.code === 'ERR_CRYPTO_UNSUPPORTED_OPERATION' ||
-    /unsupported pkcs12|unsupported algorithm|digital envelope routines/i.test(err?.message ?? '')
+    /^unsupported$/i.test(mensaje.trim()) ||
+    /unsupported pkcs12|unsupported algorithm|digital envelope routines/i.test(mensaje)
   );
 }
 
