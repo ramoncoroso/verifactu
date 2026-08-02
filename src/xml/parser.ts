@@ -1,285 +1,281 @@
 /**
- * Zero-dependency XML Parser for Verifactu
+ * Parser XML mínimo para las respuestas de la AEAT.
  *
- * Simple XML parser for handling SOAP responses from AEAT.
- * Not a full XML parser - optimized for the specific use case.
+ * El dominio de entrada es acotado —documentos SOAP de un único emisor— y por eso
+ * se mantiene propio en vez de añadir una dependencia. Pero «mínimo» no puede
+ * significar «frágil»: la versión anterior descartaba **en silencio** todos los
+ * hermanos posteriores a un comentario, convertía el contenido de un `CDATA` en un
+ * elemento con nombre basura, y ante un `<!DOCTYPE html>` de una página de error
+ * devolvía un árbol vacío sin lanzar, de modo que el fallo emergía tres capas más
+ * arriba como un error de negocio inventado.
+ *
+ * **No resuelve entidades externas ni DTD.** Es deliberado: evita XXE. Si algún
+ * día se sustituye por una librería, hay que desactivarlas explícitamente.
  */
 
 import { XmlParseError } from '../errors/xml-errors.js';
 
-/**
- * Parsed XML node
- */
+/** Nodo del árbol. */
 export interface XmlNode {
-  /** Tag name (without namespace prefix) */
+  /** Nombre local, sin prefijo. */
   name: string;
-  /** Full tag name (with namespace prefix) */
+  /** Nombre completo, con prefijo si lo hay. */
   fullName: string;
-  /** Namespace prefix */
+  /** Prefijo de espacio de nombres. */
   prefix?: string;
-  /** Attributes */
+  /** Atributos, ya desescapados. */
   attributes: Record<string, string>;
-  /** Child nodes */
-  children: XmlNode[];
-  /** Text content */
+  /** Texto concatenado de los hijos de texto y `CDATA`. */
   text?: string;
+  /** Elementos hijos. */
+  children: XmlNode[];
 }
 
+const ENTIDADES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+};
+
 /**
- * Unescape XML entities
+ * Desescapa entidades nombradas y referencias de carácter.
+ *
+ * Una sola pasada, para que `&amp;lt;` produzca `&lt;` y no `<`.
  */
 export function unescapeXml(value: string): string {
-  return value
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&');
+  return value.replace(/&(#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (completo, cuerpo: string) => {
+    if (cuerpo.startsWith('#x') || cuerpo.startsWith('#X')) {
+      const cp = Number.parseInt(cuerpo.slice(2), 16);
+      return Number.isFinite(cp) ? String.fromCodePoint(cp) : completo;
+    }
+    if (cuerpo.startsWith('#')) {
+      const cp = Number.parseInt(cuerpo.slice(1), 10);
+      return Number.isFinite(cp) ? String.fromCodePoint(cp) : completo;
+    }
+    return ENTIDADES[cuerpo] ?? completo;
+  });
 }
 
-/**
- * Parse an XML string into a node tree
- */
-export function parseXml(xml: string): XmlNode {
-  // Remove XML declaration if present
-  let content = xml.trim();
-  if (content.startsWith('<?xml')) {
-    const endDecl = content.indexOf('?>');
-    if (endDecl !== -1) {
-      content = content.substring(endDecl + 2).trim();
+interface Etiqueta {
+  fullName: string;
+  attributes: Record<string, string>;
+  autoCerrada: boolean;
+  fin: number;
+}
+
+/** Lee los atributos de una etiqueta ya delimitada. */
+function leerAtributos(fragmento: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  // Acotado al fragmento, que es justo lo que faltaba: el bucle anterior buscaba
+  // la siguiente comilla sin cota superior y se comía el resto del documento.
+  const re = /([\w.:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fragmento)) !== null) {
+    const nombre = m[1]!;
+    const valor = m[2] ?? m[3];
+    const limpio = valor === undefined ? '' : unescapeXml(valor);
+    attrs[nombre] = limpio;
+    // También accesible por su nombre local, que es como se consultan en la
+    // práctica. Si dos prefijos comparten nombre local, gana el primero.
+    const idx = nombre.indexOf(':');
+    if (idx !== -1) {
+      const local = nombre.slice(idx + 1);
+      if (attrs[local] === undefined) attrs[local] = limpio;
     }
   }
-
-  // Simple regex-based parser for well-formed XML
-  const result = parseElement(content, 0);
-  if (!result.node) {
-    throw new XmlParseError('Failed to parse root element');
-  }
-
-  return result.node;
+  return attrs;
 }
 
-interface ParseResult {
-  node: XmlNode | null;
-  endIndex: number;
-}
-
-/**
- * Parse a single XML element
- */
-function parseElement(xml: string, startIndex: number): ParseResult {
-  // Skip whitespace
-  let index = startIndex;
-  while (index < xml.length && /\s/.test(xml[index] ?? '')) {
-    index++;
-  }
-
-  // Check for opening tag
-  if (xml[index] !== '<') {
-    return { node: null, endIndex: index };
-  }
-
-  // Find the tag name
-  const tagStart = index + 1;
-  let tagEnd = tagStart;
-  while (tagEnd < xml.length && !/[\s>\/]/.test(xml[tagEnd] ?? '')) {
-    tagEnd++;
-  }
-
-  const fullName = xml.substring(tagStart, tagEnd);
-
-  // Parse namespace prefix
-  let name = fullName;
-  let prefix: string | undefined;
-  const colonIndex = fullName.indexOf(':');
-  if (colonIndex !== -1) {
-    prefix = fullName.substring(0, colonIndex);
-    name = fullName.substring(colonIndex + 1);
-  }
-
-  // Parse attributes
-  const attributes: Record<string, string> = {};
-  let pos = tagEnd;
-
-  while (pos < xml.length) {
-    // Skip whitespace
-    while (pos < xml.length && /\s/.test(xml[pos] ?? '')) {
-      pos++;
-    }
-
-    // Check for end of opening tag
-    if (xml[pos] === '>' || xml[pos] === '/') {
+/** Lee una etiqueta de apertura a partir de `<`. */
+function leerEtiqueta(xml: string, inicio: number): Etiqueta {
+  let i = inicio + 1;
+  let comilla: '"' | "'" | null = null;
+  while (i < xml.length) {
+    const c = xml[i]!;
+    if (comilla) {
+      if (c === comilla) comilla = null;
+    } else if (c === '"' || c === "'") {
+      comilla = c;
+    } else if (c === '>') {
       break;
     }
-
-    // Parse attribute name
-    const attrNameStart = pos;
-    while (pos < xml.length && xml[pos] !== '=' && !/[\s>\/]/.test(xml[pos] ?? '')) {
-      pos++;
-    }
-    const attrName = xml.substring(attrNameStart, pos);
-
-    // Skip to value
-    while (pos < xml.length && xml[pos] !== '"' && xml[pos] !== "'") {
-      pos++;
-    }
-
-    if (pos >= xml.length) break;
-
-    const quote = xml[pos];
-    pos++; // Skip opening quote
-    const valueStart = pos;
-    while (pos < xml.length && xml[pos] !== quote) {
-      pos++;
-    }
-    const attrValue = unescapeXml(xml.substring(valueStart, pos));
-    pos++; // Skip closing quote
-
-    // Store attribute (strip namespace prefix from attribute name for easier access)
-    const attrColonIndex = attrName.indexOf(':');
-    const simpleAttrName = attrColonIndex !== -1 ? attrName.substring(attrColonIndex + 1) : attrName;
-    attributes[simpleAttrName] = attrValue;
-    attributes[attrName] = attrValue; // Also store with full name
+    i++;
   }
+  if (i >= xml.length) throw new XmlParseError('Etiqueta sin cerrar');
 
-  // Check for self-closing tag
-  if (xml[pos] === '/') {
-    pos++; // Skip /
-    while (pos < xml.length && xml[pos] !== '>') {
-      pos++;
-    }
-    pos++; // Skip >
-    return {
-      node: { name, fullName, prefix, attributes, children: [] },
-      endIndex: pos,
-    };
-  }
+  const cuerpo = xml.slice(inicio + 1, i);
+  const autoCerrada = cuerpo.endsWith('/');
+  const limpio = autoCerrada ? cuerpo.slice(0, -1) : cuerpo;
+  const espacio = limpio.search(/\s/);
+  const fullName = (espacio === -1 ? limpio : limpio.slice(0, espacio)).trim();
+  const attrs = espacio === -1 ? {} : leerAtributos(limpio.slice(espacio));
 
-  // Skip closing bracket of opening tag
-  pos++; // Skip >
+  return { fullName, attributes: attrs, autoCerrada, fin: i + 1 };
+}
 
-  // Parse children and text content
-  const children: XmlNode[] = [];
-  let textContent = '';
-
-  while (pos < xml.length) {
-    // Skip whitespace
-    while (pos < xml.length && /\s/.test(xml[pos] ?? '') && xml[pos] !== '<') {
-      pos++;
-    }
-
-    // Check for closing tag
-    if (xml[pos] === '<' && xml[pos + 1] === '/') {
-      // Find end of closing tag
-      const closeTagEnd = xml.indexOf('>', pos);
-      if (closeTagEnd !== -1) {
-        pos = closeTagEnd + 1;
-      }
-      break;
-    }
-
-    // Check for child element
-    if (xml[pos] === '<') {
-      const childResult = parseElement(xml, pos);
-      if (childResult.node) {
-        children.push(childResult.node);
-        pos = childResult.endIndex;
-      } else {
-        pos++;
-      }
-    } else if (pos < xml.length) {
-      // Text content
-      const textStart = pos;
-      while (pos < xml.length && xml[pos] !== '<') {
-        pos++;
-      }
-      const rawText = xml.substring(textStart, pos);
-      const trimmedText = rawText.trim();
-      if (trimmedText) {
-        textContent += (textContent ? ' ' : '') + unescapeXml(trimmedText);
-      }
-    }
-  }
-
-  return {
-    node: {
-      name,
-      fullName,
-      prefix,
-      attributes,
-      children,
-      text: textContent || undefined,
-    },
-    endIndex: pos,
+function crearNodo(fullName: string, attributes: Record<string, string>): XmlNode {
+  const idx = fullName.indexOf(':');
+  const node: XmlNode = {
+    name: idx === -1 ? fullName : fullName.slice(idx + 1),
+    fullName,
+    attributes,
+    children: [],
   };
+  if (idx !== -1) node.prefix = fullName.slice(0, idx);
+  return node;
 }
 
-/**
- * Find a child node by name (searches recursively)
- */
-export function findNode(node: XmlNode, name: string): XmlNode | undefined {
-  // Check current node
-  if (node.name === name) {
-    return node;
+/** Parsea un documento XML. Lanza si no está bien formado. */
+export function parseXml(xml: string): XmlNode {
+  const pila: XmlNode[] = [];
+  let raiz: XmlNode | undefined;
+  let texto = '';
+  let i = 0;
+
+  const volcarTexto = (): void => {
+    if (texto === '') return;
+    const actual = pila[pila.length - 1];
+    if (actual) {
+      // Sin separador: inventar un espacio entre fragmentos de texto mixto
+      // corrompía valores donde los espacios son significativos.
+      actual.text = (actual.text ?? '') + unescapeXml(texto);
+    }
+    texto = '';
+  };
+
+  while (i < xml.length) {
+    if (xml[i] !== '<') {
+      const siguiente = xml.indexOf('<', i);
+      const hasta = siguiente === -1 ? xml.length : siguiente;
+      if (pila.length > 0) texto += xml.slice(i, hasta);
+      i = hasta;
+      continue;
+    }
+
+    // Comentario: se salta entero.
+    if (xml.startsWith('<!--', i)) {
+      const fin = xml.indexOf('-->', i + 4);
+      if (fin === -1) throw new XmlParseError('Comentario sin cerrar');
+      i = fin + 3;
+      continue;
+    }
+
+    // CDATA: su contenido es texto literal, sin desescapar.
+    if (xml.startsWith('<![CDATA[', i)) {
+      const fin = xml.indexOf(']]>', i + 9);
+      if (fin === -1) throw new XmlParseError('CDATA sin cerrar');
+      volcarTexto();
+      const actual = pila[pila.length - 1];
+      if (actual) actual.text = (actual.text ?? '') + xml.slice(i + 9, fin);
+      i = fin + 3;
+      continue;
+    }
+
+    // DOCTYPE: se salta, contando corchetes por si trae subconjunto interno.
+    if (xml.startsWith('<!DOCTYPE', i) || xml.startsWith('<!doctype', i)) {
+      let j = i + 9;
+      let corchetes = 0;
+      while (j < xml.length) {
+        const c = xml[j]!;
+        if (c === '[') corchetes++;
+        else if (c === ']') corchetes--;
+        else if (c === '>' && corchetes <= 0) break;
+        j++;
+      }
+      if (j >= xml.length) throw new XmlParseError('DOCTYPE sin cerrar');
+      i = j + 1;
+      continue;
+    }
+
+    // Declaración XML o instrucción de proceso: se salta.
+    if (xml.startsWith('<?', i)) {
+      const fin = xml.indexOf('?>', i + 2);
+      if (fin === -1) throw new XmlParseError('Instrucción de proceso sin cerrar');
+      i = fin + 2;
+      continue;
+    }
+
+    // Etiqueta de cierre.
+    if (xml.startsWith('</', i)) {
+      const fin = xml.indexOf('>', i);
+      if (fin === -1) throw new XmlParseError('Etiqueta de cierre sin terminar');
+      volcarTexto();
+      const nombre = xml.slice(i + 2, fin).trim();
+      const actual = pila[pila.length - 1];
+      if (!actual) throw new XmlParseError(`Cierre inesperado de </${nombre}>`);
+      if (actual.fullName !== nombre) {
+        throw new XmlParseError(
+          `Etiqueta mal anidada: se esperaba </${actual.fullName}> y se encontró </${nombre}>`
+        );
+      }
+      pila.pop();
+      i = fin + 1;
+      continue;
+    }
+
+    // Etiqueta de apertura.
+    volcarTexto();
+    const etiqueta = leerEtiqueta(xml, i);
+    const nodo = crearNodo(etiqueta.fullName, etiqueta.attributes);
+    const padre = pila[pila.length - 1];
+    if (padre) padre.children.push(nodo);
+    else if (raiz) throw new XmlParseError('El documento tiene más de un elemento raíz');
+    else raiz = nodo;
+    if (!etiqueta.autoCerrada) pila.push(nodo);
+    i = etiqueta.fin;
   }
 
-  // Search children
+  if (pila.length > 0) {
+    throw new XmlParseError(`Etiqueta sin cerrar: <${pila[pila.length - 1]!.fullName}>`);
+  }
+  if (!raiz) throw new XmlParseError('El documento no contiene ningún elemento');
+  return raiz;
+}
+
+/** Busca el primer nodo con ese nombre local, en profundidad. */
+export function findNode(node: XmlNode, name: string): XmlNode | undefined {
+  if (node.name === name) return node;
   for (const child of node.children) {
     const found = findNode(child, name);
-    if (found) {
-      return found;
-    }
+    if (found) return found;
   }
-
   return undefined;
 }
 
-/**
- * Find all nodes matching a name
- */
+/** Busca todos los nodos con ese nombre local, en profundidad. */
 export function findAllNodes(node: XmlNode, name: string): XmlNode[] {
-  const results: XmlNode[] = [];
-
-  if (node.name === name) {
-    results.push(node);
-  }
-
-  for (const child of node.children) {
-    results.push(...findAllNodes(child, name));
-  }
-
-  return results;
+  const out: XmlNode[] = [];
+  if (node.name === name) out.push(node);
+  for (const child of node.children) out.push(...findAllNodes(child, name));
+  return out;
 }
 
 /**
- * Get direct child by name
+ * Hijo directo con ese nombre local.
+ *
+ * Preferible a {@link findNode} siempre que se pueda: dentro de `RespuestaLinea`,
+ * `CodigoErrorRegistro` aparece dos veces —una en la línea y otra en
+ * `RegistroDuplicado`— y una búsqueda en profundidad las mezcla.
  */
 export function getChild(node: XmlNode, name: string): XmlNode | undefined {
   return node.children.find((c) => c.name === name);
 }
 
-/**
- * Get text content of a child element
- */
+/** Texto de un hijo directo. */
 export function getChildText(node: XmlNode, name: string): string | undefined {
-  const child = getChild(node, name);
-  return child?.text;
+  return getChild(node, name)?.text;
 }
 
-/**
- * Get all direct children with a given name
- */
+/** Hijos directos con ese nombre local. */
 export function getChildren(node: XmlNode, name: string): XmlNode[] {
   return node.children.filter((c) => c.name === name);
 }
 
-/**
- * Extract a simple object from XML node children
- */
+/** Vuelca los hijos directos con texto a un objeto plano. */
 export function nodeToObject(node: XmlNode): Record<string, string | undefined> {
-  const result: Record<string, string | undefined> = {};
-  for (const child of node.children) {
-    result[child.name] = child.text;
-  }
-  return result;
+  const out: Record<string, string | undefined> = {};
+  for (const child of node.children) out[child.name] = child.text;
+  return out;
 }

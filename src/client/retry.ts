@@ -162,7 +162,10 @@ export async function withRetry<T>(
       lastError = error;
 
       // Check if we should retry
-      if (attempt >= maxRetries || !isRetryable(error)) {
+      // El propio error puede declarar un máximo distinto —un timeout admite
+      // menos intentos que un fallo de conexión—, y se ignoraba.
+      const limite = Math.min(maxRetries, getRetryInfoFromError(error)?.maxRetries ?? maxRetries);
+      if (attempt >= limite || !isRetryable(error)) {
         throw error;
       }
 
