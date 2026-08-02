@@ -12,11 +12,11 @@
     "iva",
     "typescript"
   ],
-  "author": "",
+  "author": "Ramon Coroso",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/ramoncoroso/verifactu.git"
   },
   "type": "module",
   "main": "./dist/index.cjs",
@@ -35,8 +35,7 @@
     }
   },
   "files": [
-    "dist",
-    "schemas"
+    "dist"
   ],
   "engines": {
     "node": ">=18.0.0"
