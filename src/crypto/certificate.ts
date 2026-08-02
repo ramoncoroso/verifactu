@@ -11,6 +11,7 @@ import {
   CertificateError,
   CertificateNotFoundError,
 } from '../errors/crypto-errors.js';
+import { ErrorCode } from '../errors/base-error.js';
 
 /**
  * Certificate types supported
@@ -261,11 +262,74 @@ export function validateCertificate(config: CertificateConfig): void {
 
     createSecureContext(options);
   } catch (error) {
-    throw new CertificateError(
-      `Invalid certificate: ${(error as Error).message}`
-    );
+    throw certificateErrorFor(error);
   }
 }
+
+/**
+ * Traduce el error de OpenSSL a uno que diga qué hacer.
+ *
+ * Los cuatro casos posibles se envolvían en el mismo
+ * `Invalid certificate: <mensaje de OpenSSL>`, y el mensaje de OpenSSL no le
+ * dice nada a quien solo tiene un `.p12` de la FNMT que «no funciona».
+ */
+export function certificateErrorFor(error: unknown): CertificateError {
+  const err = error as NodeJS.ErrnoException & { message?: string };
+  const mensaje = err?.message ?? String(error);
+
+  if (esPkcs12Heredado(err)) {
+    return new CertificateError(MENSAJE_HEREDADO, ErrorCode.INVALID_CERTIFICATE_FORMAT, {
+      details: { openssl: mensaje },
+    });
+  }
+
+  // `mac verify failure` es EXCLUSIVAMENTE contraseña incorrecta: el MAC se
+  // comprueba antes que el cifrado, así que hasta un PKCS#12 heredado con la
+  // contraseña mala da este error y no el anterior. Confundirlos mandaría a
+  // reexportar el certificado a alguien que solo se equivocó de clave.
+  if (/mac verify failure/i.test(mensaje)) {
+    return new CertificateError(
+      'La contraseña del certificado es incorrecta (OpenSSL: «mac verify failure»).',
+      ErrorCode.CERTIFICATE_ERROR,
+      { details: { openssl: mensaje } }
+    );
+  }
+
+  return new CertificateError(`Invalid certificate: ${mensaje}`);
+}
+
+/**
+ * Si el fallo se debe a un PKCS#12 cifrado con algoritmos que OpenSSL 3 ya no
+ * ofrece en su proveedor por defecto (RC2, RC4).
+ */
+export function esPkcs12Heredado(error: unknown): boolean {
+  const err = error as NodeJS.ErrnoException & { message?: string };
+  return (
+    err?.code === 'ERR_CRYPTO_UNSUPPORTED_OPERATION' ||
+    /unsupported pkcs12|unsupported algorithm|digital envelope routines/i.test(err?.message ?? '')
+  );
+}
+
+/**
+ * Mensaje del certificado heredado, con las dos salidas.
+ *
+ * La reexportación no se puede hacer por tubería en un solo comando: el PEM
+ * intermedio contiene la clave privada **sin cifrar**, y por eso borrarlo forma
+ * parte de la receta.
+ */
+const MENSAJE_HEREDADO = [
+  'El certificado usa cifrado heredado (RC2/RC4), que OpenSSL 3 —el que lleva Node 18+—',
+  'no incluye en su proveedor por defecto. Es típico de exportaciones antiguas de la FNMT.',
+  'La contraseña es correcta: el problema es el algoritmo.',
+  '',
+  'Opción A (recomendada) · reexportar con cifrado moderno:',
+  '  openssl pkcs12 -legacy -in certificado-antiguo.p12 -nodes -out temporal.pem',
+  '  openssl pkcs12 -export -in temporal.pem -out certificado-nuevo.p12',
+  '  shred -u temporal.pem     # rm -P en macOS. El PEM lleva la clave SIN cifrar.',
+  '',
+  'Opción B (paliativa) · habilitar el proveedor legacy en TODO el proceso:',
+  '  node --openssl-legacy-provider app.js',
+].join('\n');
 
 /**
  * Certificate manager for handling certificate lifecycle
