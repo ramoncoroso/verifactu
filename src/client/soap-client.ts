@@ -18,6 +18,7 @@ import {
   SoapError,
   parseRetryAfter,
 } from '../errors/network-errors.js';
+import { certificateErrorFor, esPkcs12Heredado } from '../crypto/certificate.js';
 import { parseXml, findNode, getChildText } from '../xml/parser.js';
 import type { XmlNode } from '../xml/parser.js';
 
@@ -142,6 +143,7 @@ export async function sendSoapRequest(options: SoapRequestOptions): Promise<Soap
   };
 
   return new Promise((resolve, reject) => {
+    try {
     const req = request(requestOptions, (res: IncomingMessage) => {
       const chunks: Buffer[] = [];
       let recibidos = 0;
@@ -250,6 +252,15 @@ export async function sendSoapRequest(options: SoapRequestOptions): Promise<Soap
     // Send request body
     req.write(options.body);
     req.end();
+    } catch (error) {
+      // `request()` construye el contexto TLS de forma SÍNCRONA, así que un
+      // PKCS#12 que OpenSSL 3 no sabe descifrar revienta aquí, antes de tocar
+      // la red. Sin traducirlo llegaba como «Request error: Unsupported PKCS12
+      // PFX data» —un error de red por un problema de certificado— y todo el
+      // diagnóstico de `certificateErrorFor` quedaba inalcanzable, porque
+      // `validateCertificate` no se invoca en el camino real.
+      reject(esPkcs12Heredado(error) ? certificateErrorFor(error) : error);
+    }
   });
 }
 

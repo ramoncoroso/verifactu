@@ -19,6 +19,7 @@ PASSWORD="test-password"
 CERT_NAME="test-cert"
 DAYS=365
 KEY_SIZE=4096
+LEGACY=0
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -39,6 +40,13 @@ while [[ $# -gt 0 ]]; do
       DAYS="$2"
       shift 2
       ;;
+    --legacy)
+      # Cifrado heredado (RC2-40), el de las exportaciones antiguas de la FNMT.
+      # Sirve para reproducir el fallo de OpenSSL 3, que ya no lo trae en su
+      # proveedor por defecto. NO usar para nada real.
+      LEGACY=1
+      shift
+      ;;
     -h|--help)
       echo "Usage: $0 [options]"
       echo ""
@@ -47,6 +55,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --password PASS    PFX password (default: test-password)"
       echo "  --name NAME        Certificate name (default: test-cert)"
       echo "  --days DAYS        Validity in days (default: 365)"
+      echo "  --legacy           Cifrado heredado RC2-40 (solo para tests)"
       echo "  -h, --help         Show this help message"
       exit 0
       ;;
@@ -80,11 +89,23 @@ openssl req -x509 -newkey rsa:$KEY_SIZE \
   -subj "/CN=Verifactu Test/O=Test Organization/C=ES/L=Madrid"
 
 # Convert to PFX/P12 format
-openssl pkcs12 -export \
-  -out "$PFX_FILE" \
-  -inkey "$KEY_FILE" \
-  -in "$CERT_FILE" \
-  -passout "pass:$PASSWORD"
+if [ "$LEGACY" -eq 1 ]; then
+  # Requiere el proveedor legacy del openssl del sistema.
+  openssl pkcs12 -export -legacy \
+    -certpbe PBE-SHA1-RC2-40 \
+    -keypbe PBE-SHA1-3DES \
+    -macalg sha1 \
+    -out "$PFX_FILE" \
+    -inkey "$KEY_FILE" \
+    -in "$CERT_FILE" \
+    -passout "pass:$PASSWORD"
+else
+  openssl pkcs12 -export \
+    -out "$PFX_FILE" \
+    -inkey "$KEY_FILE" \
+    -in "$CERT_FILE" \
+    -passout "pass:$PASSWORD"
+fi
 
 echo ""
 echo "Certificate generated successfully!"
