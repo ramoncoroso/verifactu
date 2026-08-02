@@ -314,6 +314,111 @@ cambiar el separador `&` por `;`.
 
 ---
 
+## Enmiendas tras la revisión del 2026-08-02
+
+> Terminada la fase 0, un panel de revisión sometió este plan a crítica. **El orden
+> que propone §6 es incorrecto en su arranque.** Lo que sigue lo sustituye; el resto
+> del documento se conserva porque el análisis de fondo es válido.
+
+### Por qué la fase 1, tal y como está escrita, no puede ejecutarse
+
+**1. Su oráculo no puede ponerse en verde.** Los tests de vectores de
+`tests/conformance/huella-vectores.test.ts` construyen un `Date` y esperan que la
+librería emita `2024-01-01T19:20:30+01:00`. Con el formateador que propone §6
+(`Intl` + `longOffset`, sin zona explícita), medido:
+
+```
+Europe/Madrid     2024-01-01T19:20:30+01:00    OK
+UTC               2024-01-01T18:20:30+00:00    ≠ vector oficial
+America/New_York  2024-01-01T13:20:30-05:00    ≠ vector oficial
+```
+
+El CI corre en UTC y no hay `TZ` fijada en `ci.yml`, `vitest.config.ts` ni
+`package.json`. Una implementación **correcta** dejaría esos tests en rojo. Y como
+están marcados `it.fails`, hoy pasan y seguirían pasando después del arreglo:
+`it.fails` no distingue «falla por el defecto» de «falla porque el test es
+dependiente del huso».
+
+**2. Su criterio de aceptación es inobservable.** §6 dice que la señal de éxito es
+que `alta-template.test.ts` y `anulacion-template.test.ts` «dejen de compilar».
+`tsconfig.json` excluye `**/*.test.ts` y vitest transpila sin comprobar tipos: ya
+no compilan hoy (169 errores, VF-037) y el CI está verde.
+
+**3. Cambia la firma que su propio oráculo invoca.** Convertir `AltaHashFields` a
+`Record<campo, string>` borra la API que los tests de vectores llaman. No son «un
+oráculo escrito y esperando»: hay que reescribirlos dentro de la propia fase.
+
+### Agujeros de la red de conformidad, medidos
+
+- **`xsd.test.ts:124`** — el test titulado `'detecta la fecha en formato ISO'`
+  valida `<x/>`. Su único error es «no matching global declaration»: pasaría contra
+  un esquema vacío o mal cargado. No prueba nada sobre fechas.
+- **Nada compara `src/client/endpoints.ts` con `schemas/SistemaFacturacion.wsdl`**,
+  que ya está vendorizado y contiene la verdad. La demostración de §1 —«apuntar los
+  endpoints a `example.com` no rompe ningún test»— **sigue siendo cierta**.
+- **`validateRespuestaSuministro` está exportada y no la usa ningún test**, así que
+  VF-023 (bloqueante: toda respuesta real lanza `AeatError`) no tiene oráculo.
+
+### Orden corregido
+
+| # | Trabajo | h | Motivo |
+|---|---|---:|---|
+| **1** | Tapar los agujeros de la red: fijar el huso, control negativo real, test `endpoints`↔WSDL, fixture de respuesta validado | ~1 | Sin esto la fase 1 no tiene criterio de aceptación y dos bloqueantes siguen sin oráculo |
+| **2** | Desarmar el release: `npmPublish: false` hasta que la puerta de conformidad esté verde, e **invertir la instrucción del `ROADMAP.md`** sobre `NPM_TOKEN` | ~1 | Es la única acción irreversible disponible en el repositorio |
+| **3** | Demoler `xml/templates/`, `validation/schema-validator.ts` y los tests anti-norma (fase 0.10) | ~8 | 2.099 líneas sin llamantes en producción, y 91 de los 169 errores de tipos. `schema-validator.ts` es una copia a mano del XSD: obliga a edición sincronizada en cada fase sin aportar oráculo |
+| **4** | Fase 1 enmendada, **con VF-007 dentro** | ~21 | VF-007 es un bloqueante de 2 h verificable contra un WSDL que ya está en el repositorio, y §6 lo sepulta en la fase 3 detrás de 81 h |
+
+### Correcciones al grafo de dependencias de §6
+
+- **«La fase 2 depende de la fase 1»** — cierto solo para el formateador de fechas
+  (~3 h, no 21). VF-005, VF-006, VF-024, VF-025, VF-033, VF-034 y VF-009 no tocan
+  la huella.
+- **«La fase 3 depende de la fase 1»** — falso para VF-007, VF-020, VF-023, VF-027,
+  VF-029 y VF-030. Son ~25 h entregables desde hoy.
+- **Arista no vista: VF-023 → VF-012 → VF-026.** `RespuestaSuministro.xsd:25-26`
+  declara `TiempoEsperaEnvio` y `EstadoEnvio` como obligatorios: **los datos que
+  gobiernan el control de flujo llegan en la respuesta que hoy no se sabe parsear.**
+  Implementar el pacer o los lotes antes que VF-023 es hacerlo contra datos
+  inventados.
+- **Arista no vista: `schema-validator.ts` y `business-validator.ts` son entrantes
+  de las fases 1, 2 y 3.** §7.3 los trata como decisión posterior; son un impuesto
+  de retrabajo de 10-15 h repartido por todas las fases.
+- **VF-013 antes que VF-002 elimina una arista**: mientras `huella` siga en la URL
+  del QR, pasar el digest de Base64 (44 car.) a hexadecimal (64) cambia la versión
+  del código.
+- **El certificado de preproducción es un artículo con plazo de aprovisionamiento**
+  (FNMT: solicitud, acreditación, alta en preproducción). Consume cero horas de
+  ingeniería y bloquea el final: hay que iniciarlo el día 0, no cuando toque.
+
+### Hallazgos nuevos del panel, pendientes de issue
+
+- **Composición peligrosa que ninguna issue describe**, porque cada pieza está
+  catalogada por separado: la cadena avanza *antes* del envío
+  (`verifactu-client.ts:155`), `AeatError` no es reintentable, y VF-023 hace que
+  **toda** respuesta real lance `AeatError`. Contra la AEAT real, la cadena local
+  avanza en cada envío que el llamante ve como fallido.
+- **El tarball redistribuye documentos normativos de terceros.**
+  `files: ["dist", "schemas"]` mete los XSD de la AEAT y el `xmldsig-core-schema.xsd`
+  del W3C en un paquete que se anuncia MIT. Los esquemas solo los necesita el helper
+  de tests.
+- **Nada detecta la deriva de los esquemas.** `schemas:check` compara con los
+  checksums registrados, pero solo descubre un cambio si alguien ejecuta
+  `schemas:fetch`, y nada lo programa. El día que la AEAT publique `tikeV1.1`, el CI
+  seguirá verde con un job llamado «Conformidad AEAT» dando fe. La especificación se
+  movió dos veces mientras se escribía este código.
+- **La estimación de ~212 h no es defendible** con el único punto de calibración
+  disponible: la fase 0 se entregó en 37 minutos de reloj.
+
+### Decisión que hay que tomar antes del punto 3
+
+Borrar `schema-validator.ts` sustituye validación local por «que lo diga la AEAT».
+El reemplazo natural —validar contra el XSD en runtime con `libxml2-wasm`— rompería
+el compromiso de dependencias mínimas. **Si la validación previa al envío es un
+requisito de producto, hay que sustituir en vez de borrar** (≈ +12 h en el bloque
+siguiente).
+
+---
+
 ## 6. Las fases
 
 Cinco fases. El orden importa: la fase 1 fija el formateo del que dependen la 2 y la 3, y la 0
