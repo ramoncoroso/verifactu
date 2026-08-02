@@ -12,18 +12,19 @@ bloqueantes. El detalle y el orden de ataque recomendado están en
 
 ---
 
-## ⛔ NO configures NPM_TOKEN todavía
+## ⛔ La publicación sigue desarmada, y hay que abrirla a mano
 
-> Esta sección decía lo contrario: pedía configurar `NPM_TOKEN` como la tarea que
-> desbloqueaba las publicaciones automáticas. **Era una trampa**, y está invertida a
-> propósito.
+> Esta sección llegó a pedir `NPM_TOKEN` como la tarea que desbloqueaba las
+> publicaciones automáticas. **Era una trampa** —lo que habría salido publicado era una
+> librería que emitía QR ilegibles— y sigue invertida a propósito: nada de esto se abre
+> solo.
 
-El pipeline de release dispara en cada push a `main`. Hasta ahora no publicaba nada
-porque fallaba en `verifyConditions` con `EINVALIDNPMTOKEN`, antes siquiera de analizar
-los commits. Eso es un atasco, no un seguro: **configurar el token era exactamente lo
-que lo desatascaría**, y lo que saldría publicado es una librería que emite QR que
-ningún lector decodifica y huellas en Base64, versionada como «parche seguro» porque
-las correcciones son commits `fix:`.
+El pipeline de release dispara en cada push a `main`. Durante meses no publicó nada, pero
+no por seguridad: fallaba en `verifyConditions` con `EINVALIDNPMTOKEN` antes siquiera de
+analizar los commits. Eso es un atasco, y **configurar el token era exactamente lo que lo
+habría desatascado** —publicando una librería que emitía QR que ningún lector decodifica y
+huellas en Base64, versionada además como «parche seguro» porque las correcciones son
+commits `fix:`—. Los cerrojos de abajo sustituyen ese atasco por una decisión.
 
 Hay dos cerrojos, y cada uno exige un acto deliberado y visible:
 
@@ -33,19 +34,27 @@ Hay dos cerrojos, y cada uno exige un acto deliberado y visible:
 
 ### Qué tiene que ocurrir antes de abrirlos
 
-- [ ] El job **`Conformidad AEAT`** en verde **sin ningún test marcado `it.fails`**.
-      Mientras quede uno, hay un bloqueante abierto.
-- [ ] Resuelto el nombre del paquete: `verifactu` pertenece a un tercero en npm desde
-      enero de 2024. Hay que decidir entre un scope propio (`@ramoncoroso/verifactu`) o
-      una disputa de nombres. Ninguna fase del plan posee esta decisión.
-- [ ] Decidido si los esquemas de la AEAT y el `xmldsig-core-schema.xsd` del W3C deben
-      viajar dentro del tarball: hoy `files: ["dist", "schemas"]` los redistribuye en un
-      paquete que se anuncia MIT, y solo los necesita el helper de tests.
+- [x] El job **`Conformidad AEAT`** en verde **sin ningún test marcado `it.fails`**.
+      No queda ninguno: los once bloqueantes están cerrados.
+- [x] Resuelto el nombre del paquete. Se adopta el alcance de usuario
+      **`@ramoncoroso/verifactu`**: está disponible, conserva la marca y no depende de una
+      disputa con el titular de `verifactu` —una versión de 223 bytes publicada en enero
+      de 2024 y nunca actualizada—. `publishConfig.access: "public"` va puesto, porque npm
+      publica los paquetes con alcance como privados por defecto y sin eso el `publish`
+      falla con un 402.
+- [x] Decidido lo del tarball: los esquemas **ya no viajan dentro**. Ningún módulo de
+      `src/` los lee en tiempo de ejecución —solo se citan en comentarios—, así que
+      redistribuir documentos de la AEAT y del W3C en un paquete que se anuncia MIT no
+      aportaba nada. `files: ["dist"]`.
 - [ ] Verificado contra el entorno de preproducción de la AEAT que un registro es
       aceptado. Requiere un certificado, y su tramitación tiene plazo: conviene iniciarla
       cuanto antes porque no consume horas de ingeniería y bloquea el final.
 
 ### Cuando llegue el momento
+
+Queda **una** casilla: la prueba contra preproducción. Cuando esté, y solo entonces, hacen
+falta tres actos deliberados —ninguno lo puede hacer nadie desde el código, y ese es el
+objetivo—:
 
 1. Genera un token de automatización en [npmjs.com](https://www.npmjs.com/) y añádelo como
    secreto `NPM_TOKEN` en *Settings → Secrets and variables → Actions*.

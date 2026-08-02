@@ -65,19 +65,23 @@ a recommendation.
 ## Installation
 
 ```bash
-npm install verifactu
+npm install @ramoncoroso/verifactu
 ```
 
-> The `verifactu` name is taken on npm by a third party. Until that is resolved
-> ([#46](https://github.com/ramoncoroso/verifactu/issues/46)), install from the repository:
-> `npm install github:ramoncoroso/verifactu`.
+```typescript
+import { VerifactuClient } from '@ramoncoroso/verifactu';
+```
+
+> It ships scoped because the bare `verifactu` name has been reserved on npm by a third party since
+> 2024 — a 223-byte version that has never been touched. You can also install straight from the
+> repository: `npm install github:ramoncoroso/verifactu`.
 
 Requires **Node.js ≥ 18**. Ships both ESM and CommonJS.
 
 ## Quick start
 
 ```typescript
-import { VerifactuClient, InvoiceBuilder } from 'verifactu';
+import { VerifactuClient, InvoiceBuilder } from '@ramoncoroso/verifactu';
 
 const client = new VerifactuClient({
   environment: 'sandbox',
@@ -366,7 +370,7 @@ The payload is **four parameters and only four** — tax ID, invoice number, dat
 hash is **not** in the QR.
 
 ```typescript
-import { generateQrCode } from 'verifactu';
+import { generateQrCode } from '@ramoncoroso/verifactu';
 
 const r = await client.submitInvoice(invoice);
 
@@ -387,7 +391,7 @@ electrónica de la AEAT»** or **«VERI\*FACTU»**.
 Systems that do **not** issue verifiable invoices use a different verification URL:
 
 ```typescript
-import { buildQrUrl } from 'verifactu';
+import { buildQrUrl } from '@ramoncoroso/verifactu';
 const url = buildQrUrl(r.invoice, 'production', 'no-verifactu'); // …/ValidarQRNoVerifactu
 ```
 
@@ -405,7 +409,7 @@ import {
   HttpStatusError,
   SoapError,
   AeatError,
-} from 'verifactu';
+} from '@ramoncoroso/verifactu';
 
 try {
   await client.submitInvoice(invoice);
@@ -492,7 +496,7 @@ anything.
 ## Validation
 
 ```typescript
-import { validateSpanishTaxId, validateInvoice, validateInvoiceBusinessRules } from 'verifactu';
+import { validateSpanishTaxId, validateInvoice, validateInvoiceBusinessRules } from '@ramoncoroso/verifactu';
 
 validateSpanishTaxId('Q2826000H'); // { valid: true, type: 'cif',  normalized: 'Q2826000H' }
 validateSpanishTaxId('M1234567L'); // { valid: true, type: 'nif' }  ← K/L/M are individuals
