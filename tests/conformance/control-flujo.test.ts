@@ -30,11 +30,18 @@ import {
 import { ConnectionError } from '../../src/errors/network-errors.js';
 import type { Invoice } from '../../src/models/invoice.js';
 import type { SoftwareInfo } from '../../src/models/party.js';
-import { parseXml } from '../../src/xml/parser.js';
+import { parseXml, type XmlNode } from '../../src/xml/parser.js';
 import { buildRespuestaSuministro, wrapSoapResponse } from '../fixtures/aeat-respuesta.js';
 
 /** Reloj y espera falsos: el tiempo avanza solo cuando alguien duerme. */
-function relojFalso() {
+interface RelojFalso {
+  readonly dormidas: number[];
+  now(): number;
+  sleep(ms: number): Promise<void>;
+  avanzar(ms: number): void;
+}
+
+function relojFalso(): RelojFalso {
   let ahora = 1_000_000;
   const dormidas: number[] = [];
   return {
@@ -107,7 +114,7 @@ describe('SubmissionPacer', () => {
 
   it.each([undefined, NaN, Infinity, -1])('ignora un TiempoEsperaEnvio absurdo (%s)', (valor) => {
     const p = new SubmissionPacer({ waitSeconds: 30 });
-    p.updateFromResponse(valor as number | undefined);
+    p.updateFromResponse(valor);
     expect(p.waitSeconds).toBe(30);
   });
 
@@ -183,7 +190,10 @@ let enviados: string[];
 let soap: { send: ReturnType<typeof vi.fn> };
 
 /** Respuesta con una línea correcta por registro enviado. */
-function respuesta(registros: number, tiempoEspera?: number) {
+function respuesta(
+  registros: number,
+  tiempoEspera?: number
+): { statusCode: number; body: string; xml: XmlNode; headers: Record<string, string> } {
   const body = wrapSoapResponse(
     buildRespuestaSuministro({
       estadoEnvio: 'Correcto',

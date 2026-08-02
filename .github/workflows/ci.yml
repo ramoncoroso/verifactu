@@ -58,11 +58,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run ESLint
-        run: npm run lint
+      # `lint:all` y `typecheck:tests` incluyen los ficheros de test, que hasta
+      # ahora no había visto ni el compilador ni el linter: `tsconfig.json` los
+      # excluye —correctamente, no son entrada del build— y `lint` solo miraba
+      # `src`. En esa zona ciega vivían 149 errores de tipos, y varios señalaban
+      # defectos reales: tests que comparaban `undefined` con `undefined` porque
+      # usaban nombres de enumerado inexistentes, y fixtures con valores que la
+      # AEAT no admite. Son pasos bloqueantes a propósito.
+      - name: Run ESLint (src + tests)
+        run: npm run lint:all
 
-      - name: Type check
+      - name: Type check (src)
         run: npm run typecheck
+
+      - name: Type check (tests)
+        run: npm run typecheck:tests
 
   test:
     name: Test (Node ${{ matrix.node-version }})
@@ -109,6 +119,10 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage/lcov.info
+          # Sigue en `false` a propósito: esto solo gobierna si un fallo de SUBIDA
+          # a Codecov tumba el CI, y un servicio externo caído no es un defecto
+          # del código. La puerta de cobertura que sí bloquea son los umbrales de
+          # `vitest.config.ts`, ajustados a la cobertura real.
           fail_ci_if_error: false
           verbose: true
         env:

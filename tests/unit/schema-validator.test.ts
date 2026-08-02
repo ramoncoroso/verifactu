@@ -11,9 +11,12 @@ import {
 } from '../../src/validation/schema-validator.js';
 import type { Invoice, InvoiceCancellation } from '../../src/models/invoice.js';
 import { SchemaValidationError } from '../../src/errors/validation-errors.js';
+import type { Mutable } from '../helpers/mutable.js';
+import { invalido } from '../helpers/mutable.js';
+import type { ExemptionCause, NonSubjectCause } from '../../src/models/enums.js';
 
 describe('Schema Validator', () => {
-  const createValidInvoice = (): Invoice => ({
+  const createValidInvoice = (): Mutable<Invoice> => ({
     operationType: 'A',
     invoiceType: 'F1',
     id: {
@@ -44,7 +47,7 @@ describe('Schema Validator', () => {
     totalAmount: 121,
   });
 
-  const createValidCancellation = (): InvoiceCancellation => ({
+  const createValidCancellation = (): Mutable<InvoiceCancellation> => ({
     operationType: 'AN',
     invoiceId: {
       series: 'A',
@@ -72,22 +75,22 @@ describe('Schema Validator', () => {
 
         expect(result.valid).toBe(false);
         expect(result.violations).toHaveLength(1);
-        expect(result.violations[0].path).toBe('invoice');
-        expect(result.violations[0].message).toBe('Invoice is required');
+        expect(result.violations[0]!.path).toBe('invoice');
+        expect(result.violations[0]!.message).toBe('Invoice is required');
       });
 
       it('should error when invoice is undefined', () => {
         const result = validateInvoice(undefined as unknown as Invoice);
 
         expect(result.valid).toBe(false);
-        expect(result.violations[0].message).toBe('Invoice is required');
+        expect(result.violations[0]!.message).toBe('Invoice is required');
       });
     });
 
     describe('operation type validation', () => {
       it('should error on invalid operation type', () => {
         const invoice = createValidInvoice();
-        invoice.operationType = 'X' as any;
+        invoice.operationType = invalido('X');
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -109,7 +112,7 @@ describe('Schema Validator', () => {
       validTypes.forEach((type) => {
         it(`should pass with valid invoice type ${type}`, () => {
           const invoice = createValidInvoice();
-          invoice.invoiceType = type as any;
+          invoice.invoiceType = invalido(type);
           const result = validateInvoice(invoice);
 
           expect(result.violations.some(v => v.path === 'invoiceType')).toBe(false);
@@ -118,7 +121,7 @@ describe('Schema Validator', () => {
 
       it('should error on invalid invoice type', () => {
         const invoice = createValidInvoice();
-        invoice.invoiceType = 'INVALID' as any;
+        invoice.invoiceType = invalido('INVALID');
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -129,7 +132,7 @@ describe('Schema Validator', () => {
     describe('invoice ID validation', () => {
       it('should error when id is missing', () => {
         const invoice = createValidInvoice();
-        invoice.id = null as any;
+        invoice.id = invalido(null);
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -173,7 +176,7 @@ describe('Schema Validator', () => {
 
       it('should error when issue date is missing', () => {
         const invoice = createValidInvoice();
-        invoice.id.issueDate = null as any;
+        invoice.id.issueDate = invalido(null);
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -193,7 +196,7 @@ describe('Schema Validator', () => {
     describe('issuer validation', () => {
       it('should error when issuer is missing', () => {
         const invoice = createValidInvoice();
-        invoice.issuer = null as any;
+        invoice.issuer = invalido(null);
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -220,7 +223,7 @@ describe('Schema Validator', () => {
 
       it('should error when issuer tax ID is missing', () => {
         const invoice = createValidInvoice();
-        invoice.issuer.taxId = null as any;
+        invoice.issuer.taxId = invalido(null);
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -229,7 +232,7 @@ describe('Schema Validator', () => {
 
       it('should error when issuer tax ID type is missing', () => {
         const invoice = createValidInvoice();
-        invoice.issuer.taxId.type = '' as any;
+        invoice.issuer.taxId.type = invalido('');
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -267,7 +270,7 @@ describe('Schema Validator', () => {
 
       it('should pass for non-NIF tax ID types', () => {
         const invoice = createValidInvoice();
-        invoice.issuer.taxId = { type: 'OTHER', value: 'FOREIGN123' };
+        invoice.issuer.taxId = { type: 'OTHER' as 'NIF', value: 'FOREIGN123' };
         const result = validateInvoice(invoice);
 
         // Should not trigger NIF-specific validation
@@ -286,7 +289,7 @@ describe('Schema Validator', () => {
 
       it('should error when recipient is invalid', () => {
         const invoice = createValidInvoice();
-        invoice.recipients = [null as any];
+        invoice.recipients = [invalido(null)];
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -295,7 +298,7 @@ describe('Schema Validator', () => {
 
       it('should error when recipient name is missing', () => {
         const invoice = createValidInvoice();
-        invoice.recipients![0].name = '';
+        invoice.recipients![0]!.name = '';
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -304,7 +307,7 @@ describe('Schema Validator', () => {
 
       it('should error when recipient name exceeds max length', () => {
         const invoice = createValidInvoice();
-        invoice.recipients![0].name = 'A'.repeat(121);
+        invoice.recipients![0]!.name = 'A'.repeat(121);
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -337,7 +340,7 @@ describe('Schema Validator', () => {
 
       it('should error when operation regimes is undefined', () => {
         const invoice = createValidInvoice();
-        invoice.operationRegimes = undefined as any;
+        invoice.operationRegimes = invalido(undefined);
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -348,7 +351,7 @@ describe('Schema Validator', () => {
     describe('tax breakdown validation', () => {
       it('should error when tax breakdown is missing', () => {
         const invoice = createValidInvoice();
-        invoice.taxBreakdown = null as any;
+        invoice.taxBreakdown = invalido(null);
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -378,7 +381,7 @@ describe('Schema Validator', () => {
       it('should pass with only non-subject breakdowns', () => {
         const invoice = createValidInvoice();
         invoice.taxBreakdown = {
-          nonSubjectBreakdowns: [{ cause: 'NS1', amount: 100 }],
+          nonSubjectBreakdowns: [{ cause: 'NS1' as NonSubjectCause, amount: 100 }],
         };
         invoice.totalAmount = 100;
         const result = validateInvoice(invoice);
@@ -389,7 +392,7 @@ describe('Schema Validator', () => {
       it('should error when exempt breakdown has no cause', () => {
         const invoice = createValidInvoice();
         invoice.taxBreakdown = {
-          exemptBreakdowns: [{ cause: '', taxBase: 100 }],
+          exemptBreakdowns: [{ cause: '' as ExemptionCause, taxBase: 100 }],
         };
         const result = validateInvoice(invoice);
 
@@ -400,7 +403,7 @@ describe('Schema Validator', () => {
       it('should error when non-subject breakdown has no cause', () => {
         const invoice = createValidInvoice();
         invoice.taxBreakdown = {
-          nonSubjectBreakdowns: [{ cause: '', amount: 100 }],
+          nonSubjectBreakdowns: [{ cause: '' as NonSubjectCause, amount: 100 }],
         };
         const result = validateInvoice(invoice);
 
@@ -457,7 +460,7 @@ describe('Schema Validator', () => {
     describe('amount validation', () => {
       it('should error when total amount is not a number', () => {
         const invoice = createValidInvoice();
-        invoice.totalAmount = 'invalid' as any;
+        invoice.totalAmount = invalido('invalid');
         const result = validateInvoice(invoice);
 
         expect(result.valid).toBe(false);
@@ -605,19 +608,19 @@ describe('Schema Validator', () => {
       const result = validateCancellation(null as unknown as InvoiceCancellation);
 
       expect(result.valid).toBe(false);
-      expect(result.violations[0].message).toBe('Cancellation is required');
+      expect(result.violations[0]!.message).toBe('Cancellation is required');
     });
 
     it('should error when cancellation is undefined', () => {
       const result = validateCancellation(undefined as unknown as InvoiceCancellation);
 
       expect(result.valid).toBe(false);
-      expect(result.violations[0].message).toBe('Cancellation is required');
+      expect(result.violations[0]!.message).toBe('Cancellation is required');
     });
 
     it('should error on invalid operation type', () => {
       const cancellation = createValidCancellation();
-      cancellation.operationType = 'A' as any; // Should be 'AN'
+      cancellation.operationType = invalido('A'); // Should be 'AN'
       const result = validateCancellation(cancellation);
 
       expect(result.valid).toBe(false);
@@ -626,7 +629,7 @@ describe('Schema Validator', () => {
 
     it('should error when invoice ID is missing', () => {
       const cancellation = createValidCancellation();
-      cancellation.invoiceId = null as any;
+      cancellation.invoiceId = invalido(null);
       const result = validateCancellation(cancellation);
 
       expect(result.valid).toBe(false);
@@ -635,7 +638,7 @@ describe('Schema Validator', () => {
 
     it('should error when issuer is missing', () => {
       const cancellation = createValidCancellation();
-      cancellation.issuer = null as any;
+      cancellation.issuer = invalido(null);
       const result = validateCancellation(cancellation);
 
       expect(result.valid).toBe(false);
@@ -652,14 +655,14 @@ describe('Schema Validator', () => {
 
     it('should throw SchemaValidationError for invalid invoice', () => {
       const invoice = createValidInvoice();
-      invoice.issuer = null as any;
+      invoice.issuer = invalido(null);
 
       expect(() => assertValidInvoice(invoice)).toThrow(SchemaValidationError);
     });
 
     it('should include violations in thrown error', () => {
       const invoice = createValidInvoice();
-      invoice.issuer = null as any;
+      invoice.issuer = invalido(null);
 
       try {
         assertValidInvoice(invoice);
@@ -681,14 +684,14 @@ describe('Schema Validator', () => {
 
     it('should throw SchemaValidationError for invalid cancellation', () => {
       const cancellation = createValidCancellation();
-      cancellation.invoiceId = null as any;
+      cancellation.invoiceId = invalido(null);
 
       expect(() => assertValidCancellation(cancellation)).toThrow(SchemaValidationError);
     });
 
     it('should include violations in thrown error', () => {
       const cancellation = createValidCancellation();
-      cancellation.issuer = null as any;
+      cancellation.issuer = invalido(null);
 
       try {
         assertValidCancellation(cancellation);

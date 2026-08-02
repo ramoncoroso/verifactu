@@ -10,9 +10,12 @@ import {
   BusinessRules,
 } from '../../src/validation/business-validator.js';
 import type { Invoice, InvoiceCancellation } from '../../src/models/invoice.js';
+import type { Mutable } from '../helpers/mutable.js';
+import { invalido } from '../helpers/mutable.js';
+import type { ExemptBreakdown } from '../../src/models/tax.js';
 
 describe('Business Rules Validator', () => {
-  const createValidInvoice = (): Invoice => ({
+  const createValidInvoice = (): Mutable<Invoice> => ({
     operationType: 'A',
     invoiceType: 'F1',
     id: {
@@ -211,7 +214,7 @@ describe('Business Rules Validator', () => {
         const invoice = createValidInvoice();
         invoice.taxBreakdown.vatBreakdowns = [];
         invoice.taxBreakdown.exemptBreakdowns = [
-          { cause: '', taxBase: 100 } as any, // Empty cause
+          invalido<ExemptBreakdown>({ cause: '', taxBase: 100 }), // Empty cause
         ];
         invoice.totalAmount = 100;
         const result = validateInvoiceBusinessRules(invoice);
@@ -263,7 +266,7 @@ describe('Business Rules Validator', () => {
   });
 
   describe('validateCancellationBusinessRules', () => {
-    const createValidCancellation = (): InvoiceCancellation => ({
+    const createValidCancellation = (): Mutable<InvoiceCancellation> => ({
       operationType: 'AN',
       invoiceId: {
         series: 'A',
@@ -316,7 +319,7 @@ describe('Business Rules Validator', () => {
 
     it('should return schema errors when schema validation fails', () => {
       const invoice = createValidInvoice();
-      invoice.operationType = 'INVALID' as any; // Invalid operation type
+      invoice.operationType = invalido('INVALID'); // Invalid operation type
       invoice.totalAmount = 999999999999.99; // Out of range
 
       const result = validateInvoiceFull(invoice);

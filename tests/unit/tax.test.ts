@@ -156,7 +156,7 @@ describe('Tax Models', () => {
     it('should calculate totals with non-subject breakdowns', () => {
       const breakdown: TaxBreakdown = {
         nonSubjectBreakdowns: [
-          { cause: 'RL', amount: 50 },
+          { cause: 'N2', amount: 50 },
         ],
       };
 
@@ -176,7 +176,7 @@ describe('Tax Models', () => {
           { cause: 'E1', taxBase: 50 },
         ],
         nonSubjectBreakdowns: [
-          { cause: 'RL', amount: 25 },
+          { cause: 'N2', amount: 25 },
         ],
       };
 

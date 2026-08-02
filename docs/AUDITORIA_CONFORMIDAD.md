@@ -180,7 +180,9 @@ git clone https://github.com/ramoncoroso/verifactu && cd verifactu
 npm ci
 npx tsc --noEmit      # sin errores
 npm run lint          # 8 warnings (no-console en logger.ts, intencionados)
-npm run test:coverage # 691 tests, ~94% de cobertura
+npm run test:coverage # 977 tests, ~93,5% de cobertura
+npm run typecheck:tests # los tests también compilan
+npm run lint:all      # y también pasan el linter
 npm audit --omit=dev  # 0 vulnerabilidades
 ```
 
@@ -188,6 +190,28 @@ La conformidad se contrastó contra el XSD oficial `SuministroInformacion.xsd` y
 documentación pública de la AEAT enlazada en [Referencias](#referencias). **Ningún hallazgo se ha
 verificado todavía contra el entorno real de preproducción**, porque hacerlo requiere un
 certificado electrónico válido; ver [VF-018](#vf-018).
+
+#### Prueba de mutación · el criterio de aceptación de VF-018
+
+VF-018 no se cierra enseñando cobertura: se cierra demostrando que la suite **detecta** un cambio
+de comportamiento. Estas son las tres mutaciones del hallazgo, ejecutadas sobre `main` el
+2026-08-02, con el resultado de antes y el de ahora:
+
+| Mutación | Antes | Ahora |
+|---|---|---|
+| Endpoint de pruebas → `https://example.com` | **0 tests fallan** | 1 falla · `endpoints-wsdl.test.ts` «la URL de pruebas es la del WSDL» |
+| `buildMatrix` devuelve una matriz en blanco | 21 de 22 tests de QR **pasan** | 10 fallan · `qr-decode.test.ts`, todos por no decodificar |
+| `formatAeatDate` → ISO `yyyy-mm-dd` | 6 fallan, y **corregir el bug** rompía la suite | 40 fallan · vectores de huella, XSD y QR a la vez |
+
+Las tres fallan ahora **por el motivo correcto**: el nombre del test que salta nombra la propiedad
+violada, no un efecto colateral. Es la diferencia entre una suite que fija la implementación y una
+que fija la norma.
+
+Reproducirlo: aplicar la mutación, `npx vitest run`, revertir. No se automatiza en el CI porque
+un banco de mutación completo es otro proyecto; queda como registro fechado.
+
+La cobertura, por su parte, mide **ejecución**, no conformidad: el 94 % convivía con siete
+defectos bloqueantes porque el oráculo de cada test era la propia implementación.
 
 ---
 

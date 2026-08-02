@@ -64,13 +64,13 @@ describe('Party Models', () => {
   describe('createForeignRecipient', () => {
     it('should create foreign recipient with VAT number', () => {
       const recipient = createForeignRecipient(
-        'VAT',
+        '02',
         'FR12345678901',
         'FR',
         'French Company SARL'
       );
 
-      expect(recipient.taxId.type).toBe('VAT');
+      expect(recipient.taxId.type).toBe('02');
       expect(recipient.taxId.value).toBe('FR12345678901');
       expect(recipient.taxId.country).toBe('FR');
       expect(recipient.name).toBe('French Company SARL');
@@ -79,20 +79,20 @@ describe('Party Models', () => {
 
     it('should create foreign recipient with passport', () => {
       const recipient = createForeignRecipient(
-        'PASSPORT',
+        '03',
         'AB123456',
         'US',
         'John Doe'
       );
 
-      expect(recipient.taxId.type).toBe('PASSPORT');
+      expect(recipient.taxId.type).toBe('03');
       expect(recipient.taxId.value).toBe('AB123456');
       expect(recipient.taxId.country).toBe('US');
     });
 
     it('should create foreign recipient with address', () => {
       const recipient = createForeignRecipient(
-        'VAT',
+        '02',
         'DE123456789',
         'DE',
         'German GmbH',

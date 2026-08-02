@@ -14,7 +14,7 @@ import {
   type VerifactuClientConfig,
 } from '../../src/client/verifactu-client.js';
 import type { Invoice, InvoiceId } from '../../src/models/invoice.js';
-import type { Issuer, SoftwareInfo } from '../../src/models/party.js';
+import type { SoftwareInfo } from '../../src/models/party.js';
 import type { SoapResponse } from '../../src/client/soap-client.js';
 import { AeatError } from '../../src/errors/network-errors.js';
 import { parseXml } from '../../src/xml/parser.js';
@@ -38,6 +38,7 @@ vi.mock('../../src/client/soap-client.js', () => ({
 // Import mocked modules
 import { createCertificateManager } from '../../src/crypto/certificate.js';
 import { createSoapClient } from '../../src/client/soap-client.js';
+import type { Mutable } from '../helpers/mutable.js';
 
 describe('VerifactuClient', () => {
   const mockSoapClient = {
@@ -62,7 +63,7 @@ describe('VerifactuClient', () => {
     software: softwareInfo,
   });
 
-  const createValidInvoice = (): Invoice => ({
+  const createValidInvoice = (): Mutable<Invoice> => ({
     operationType: 'A',
     invoiceType: 'F1',
     // Obligatoria en el XSD: sin ella el documento no valida.
@@ -169,6 +170,7 @@ describe('VerifactuClient', () => {
         lastDate: new Date('2024-01-10'),
         lastSeries: 'A',
         recordCount: 1,
+        isFirst: false,
       };
       const client = new VerifactuClient(config);
 
@@ -232,7 +234,7 @@ describe('VerifactuClient', () => {
       const client = new VerifactuClient(createConfig());
       const invoice = createValidInvoice();
       invoice.recipients = [{
-        taxId: { type: 'VAT', value: 'FR12345678901', country: 'FR' },
+        taxId: { type: '02', value: 'FR12345678901', country: 'FR' },
         name: 'French Client SARL',
       }];
       const response = await client.submitInvoice(invoice);

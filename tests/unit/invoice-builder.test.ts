@@ -128,7 +128,7 @@ describe('InvoiceBuilder', () => {
         .issuer('B12345674', 'Test')
         .type('F1')
         .id('001')
-        .addNonSubjectBreakdown(100, 'OT')
+        .addNonSubjectBreakdown(100, 'N1')
         .build();
 
       expect(invoice.taxBreakdown.nonSubjectBreakdowns).toHaveLength(1);

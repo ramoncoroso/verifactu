@@ -39,6 +39,8 @@ import {
 } from '../../src/errors/crypto-errors.js';
 import { XmlError, XmlParseError, XmlBuildError, XmlTemplateError } from '../../src/errors/xml-errors.js';
 import { QrGenerationError, QrDataTooLargeError } from '../../src/errors/qr-errors.js';
+import { invalido } from '../helpers/mutable.js';
+import type { SchemaViolation } from '../../src/errors/validation-errors.js';
 
 describe('Error Classes', () => {
   describe('VerifactuError (base)', () => {
@@ -311,7 +313,7 @@ describe('Error Classes', () => {
 
     it('should handle undefined violation', () => {
       const error = new SchemaValidationError([
-        { path: 'field' } as any,
+        invalido<SchemaViolation>({ path: 'field' }),
       ]);
 
       expect(error.message).toContain('Unknown error');

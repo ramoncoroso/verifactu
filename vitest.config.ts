@@ -25,11 +25,19 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/index.ts', 'src/**/*.d.ts'],
       thresholds: {
-        // Adjusted thresholds - SOAP client and certificate modules require complex mocking
-        lines: 70,
-        functions: 80,
-        branches: 80,
-        statements: 70,
+        // Ajustados a la cobertura real (93,5 / 89,6 / 96,8) menos un margen de
+        // 2 puntos. Los anteriores —70/80/80/70— estaban veinticuatro puntos por
+        // debajo del estado del repositorio, así que se podía borrar un módulo
+        // entero de tests sin que la puerta se enterara.
+        //
+        // Ojo con lo que significan: la cobertura mide EJECUCIÓN, no
+        // conformidad. El 94 % convivía con siete defectos bloqueantes porque
+        // el oráculo de cada test era la propia implementación. Quien de verdad
+        // vigila la conformidad es `tests/conformance/`, no este número.
+        lines: 91,
+        functions: 94,
+        branches: 87,
+        statements: 91,
       },
     },
   },
