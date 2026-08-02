@@ -1,23 +1,98 @@
 version: 2
+
+# Criterio de agrupación (ver la issue VF-032):
+#
+#   1. Las actualizaciones menores y de parche se agrupan POR ÁREA de herramienta,
+#      de modo que cada PR se revisa con un solo contexto en la cabeza.
+#   2. Los saltos de VERSIÓN MAYOR quedan fuera de todo grupo y llegan en PRs
+#      individuales. Agruparlos es lo que dejó el PR #6 abierto desde marzo con
+#      12 actualizaciones, 11 de ellas majors (eslint 8→10, typescript 5→6,
+#      vitest 1→4, semantic-release 22→25…): imposible de revisar, nunca se
+#      mergeó, y por eso se acumularon 35 vulnerabilidades.
+#   3. Las actualizaciones de SEGURIDAD nunca se agrupan (`applies-to:
+#      version-updates` en todos los grupos), así que siempre llegan solas y no
+#      quedan sepultadas en un PR monolítico.
+
 updates:
-  # npm dependencies
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 10
+    # Suficiente para los cinco grupos más varios majors sueltos en paralelo.
+    open-pull-requests-limit: 12
     commit-message:
       prefix: "deps"
-    groups:
-      dev-dependencies:
-        dependency-type: "development"
-        patterns:
-          - "*"
     labels:
       - "dependencies"
+    groups:
+      # Dependencias de runtime: son las únicas que llegan a la máquina de quien
+      # instala la librería, y las que vigila la puerta bloqueante del CI
+      # (`npm audit --omit=dev`). Hoy no hay ninguna; la habrá al resolver VF-001.
+      # Van aparte para que nunca se revisen mezcladas con utillaje de desarrollo.
+      production:
+        applies-to: version-updates
+        dependency-type: "production"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  # GitHub Actions
+      test-tooling:
+        applies-to: version-updates
+        dependency-type: "development"
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      lint-tooling:
+        applies-to: version-updates
+        dependency-type: "development"
+        patterns:
+          - "eslint"
+          - "eslint-*"
+          - "@typescript-eslint/*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      build-tooling:
+        applies-to: version-updates
+        dependency-type: "development"
+        patterns:
+          - "tsup"
+          - "typescript"
+        update-types:
+          - "minor"
+          - "patch"
+
+      release-tooling:
+        applies-to: version-updates
+        dependency-type: "development"
+        patterns:
+          - "semantic-release"
+          - "@semantic-release/*"
+          - "commitlint"
+          - "@commitlint/*"
+          - "conventional-changelog-*"
+          - "husky"
+        update-types:
+          - "minor"
+          - "patch"
+
+      types:
+        applies-to: version-updates
+        dependency-type: "development"
+        patterns:
+          - "@types/*"
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -28,3 +103,14 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+    groups:
+      # Las actions de terceros se actualizan casi siempre en bloque y su diff es
+      # de una línea; agruparlas ahorra ruido sin perder revisabilidad. Los majors
+      # (p. ej. actions/checkout@v4 → v5) siguen llegando por separado.
+      github-actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
