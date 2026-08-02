@@ -379,8 +379,8 @@ se puede cerrar contra el servicio real.
 
 | # | Trabajo | Cierra | Notas |
 |---|---|---|---|
-| **8** | **Cadena append-only y reenvío de bytes** | #21 | ~20 h. `RecordChain.append()`, sin `revert()` en la API pública, y reintento que reenvía los bytes almacenados en vez de regenerar el registro |
-| **9** | **Control de flujo y envío por lotes** | #22, #36 | ~14 h. `SubmissionPacer` persistente y `BatchQueue` hasta 1000 registros. **Los datos ya llegan parseados** desde #78 |
+| ~~8~~ | ~~Cadena append-only y reenvío de bytes~~ | #21 | ✅ #79. Pendiente aparte: **persistencia** del estado, que hoy vive en memoria |
+| **9** | **Control de flujo y envío por lotes** | #22, #36 | ~14 h. `SubmissionPacer` persistente y `BatchQueue` hasta 1000 registros. **Los datos llegan parseados** desde #78 y el envío ya es una operación separable desde #79 |
 | **10** | **Endurecer transporte y parser** | #30, #37, #39, #40 | ~14 h. Comprobar el estado HTTP, comentarios y CDATA en el parser, backoff real, sobresuscripción del limitador |
 | **11** | **Puerta de calidad** | #28, #68 | ~8 h. `typecheck:tests` y `lint:all` al CI, ya sobre ficheros definitivos |
 | **12** | **Preproducción** | — | Requiere certificado. Es lo único que confirma que la AEAT acepta un registro |
