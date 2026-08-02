@@ -1,8 +1,19 @@
 # Verifactu
 
-Librería TypeScript **production-ready** para integrar con el sistema **Verifactu de la AEAT** (Agencia Tributaria Española).
+Librería TypeScript para integrar con el sistema **Verifactu de la AEAT** (Agencia Tributaria Española).
 
 **[Read in English](README.en.md)**
+
+> ### ⚠️ Estado: en desarrollo — no apta todavía para producción
+>
+> Una auditoría contra la especificación de la AEAT ha detectado que el generador de códigos QR,
+> el cálculo de la huella y la estructura del XML **no son conformes** en su estado actual, por lo
+> que un envío no sería aceptado por la AEAT. La arquitectura, los modelos, la validación y la
+> capa de cliente sí están consolidados.
+>
+> El detalle completo —22 hallazgos con archivo, línea, qué exige la norma y cómo resolverlo—
+> está en **[`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md)**, y cada hallazgo
+> tiene su issue abierta. Las contribuciones son bienvenidas.
 
 [![CI](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml/badge.svg)](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/ramoncoroso/verifactu/branch/master/graph/badge.svg)](https://codecov.io/gh/ramoncoroso/verifactu)
