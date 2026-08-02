@@ -15,8 +15,30 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    # Only run if the commit message doesn't start with 'chore(release)'
-    if: "!startsWith(github.event.head_commit.message, 'chore(release)')"
+    # ┌────────────────────────────────────────────────────────────────────────┐
+    # │ SEGURO DE PUBLICACIÓN — no lo quites sin leer esto                     │
+    # └────────────────────────────────────────────────────────────────────────┘
+    #
+    # La librería NO es conforme con la especificación de la AEAT: el QR no lo
+    # decodifica ningún lector, la huella va en Base64 y el XML no valida. Ver
+    # docs/AUDITORIA_CONFORMIDAD.md y las issues abiertas.
+    #
+    # Este workflow dispara en cada push a main. Hasta ahora no publicaba nada
+    # por accidente: fallaba en `verifyConditions` por NPM_TOKEN inválido, antes
+    # de analizar los commits. Eso es un atasco, no un seguro — y el ROADMAP
+    # pedía configurar NPM_TOKEN, que es justo lo que lo desatascaría.
+    #
+    # Ahora hay dos cerrojos, y cada uno exige un acto deliberado:
+    #   1. Esta condición: el job se salta salvo que exista la variable de
+    #      repositorio RELEASE_ENABLED con valor 'true'.
+    #   2. `npmPublish: false` en .releaserc.json.
+    #
+    # Ninguno de los dos se abre hasta que el job «Conformidad AEAT» de ci.yml
+    # esté verde SIN tests marcados `it.fails`, y hasta que esté resuelto el
+    # nombre del paquete (la issue del nombre ocupado en npm).
+    if: >-
+      vars.RELEASE_ENABLED == 'true' &&
+      !startsWith(github.event.head_commit.message, 'chore(release)')
 
     steps:
       - name: Checkout
@@ -39,6 +61,17 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      # El release debe pasar la misma puerta que un PR, no menos. Sin esto se
+      # podría publicar una versión cuyos esquemas no coinciden con los de la AEAT.
+      - name: Verificar integridad de los esquemas oficiales
+        run: npm run schemas:check
+
+      - name: Tests de conformidad
+        run: npm run test:conformance
+
+      - name: Auditoría del árbol de producción
+        run: npm audit --omit=dev --audit-level=low
 
       - name: Verify build artifacts
         run: |

@@ -33,6 +33,21 @@ import {
 const sha256Upper = (s: string): string =>
   createHash('sha256').update(s, 'utf8').digest('hex').toUpperCase();
 
+describe('Precondición · la zona horaria está fijada', () => {
+  // Si alguien quita `env: { TZ }` de vitest.config.ts, los vectores dejan de ser
+  // reproducibles y los `it.fails` de abajo empiezan a mentir: pasarían por el
+  // huso equivocado en vez de por el defecto que documentan. Este test lo impide.
+  it('el proceso corre en Europe/Madrid', () => {
+    expect(process.env.TZ).toBe('Europe/Madrid');
+  });
+
+  it('el huso del proceso reproduce el instante del vector oficial', () => {
+    const instante = new Date('2024-01-01T19:20:30+01:00');
+    expect(instante.getHours()).toBe(19);
+    expect(instante.getTimezoneOffset()).toBe(-60);
+  });
+});
+
 describe('Vectores oficiales de la AEAT · integridad del fixture', () => {
   // Este sí debe pasar siempre: verifica que los vectores son coherentes entre
   // sí, no que la librería los reproduzca. Si falla, el fixture está corrupto.
