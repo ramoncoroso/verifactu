@@ -11,6 +11,23 @@
 | **Alcance** | `src/**` completo, configuración de build/CI/release, documentación |
 | **Estado del build** | `tsc --noEmit` ✅ · `eslint` 8 warnings · `npm audit` 0 vulnerabilidades · **691/691 tests ✅** |
 
+> ### ⚠️ Revisión de 2026-08-02
+>
+> Un análisis posterior en profundidad, contrastado contra los XSD oficiales, el WSDL vigente y
+> los vectores de prueba publicados por la AEAT, ha **rectificado dos hallazgos** de este
+> documento y ha encontrado **nueve más**, cuatro de ellos bloqueantes.
+>
+> - **[VF-011](#vf-011) queda refutado.** La cadena *debe* avanzar aunque la AEAT rechace el
+>   registro; revertirla sería una no conformidad. El bug real es el contrario y está en el
+>   camino de reintento.
+> - **[VF-013](#vf-013) es correcto a medias.** El parámetro `huella` sobra, sí; pero la
+>   codificación del espacio como `+` es la que prescribe la implementación de referencia de la
+>   AEAT — la corrección que se proponía habría roto el comportamiento correcto.
+>
+> El detalle de ambas rectificaciones, los nueve hallazgos nuevos y el plan de ejecución completo
+> están en **[`PLAN_CORRECCIONES.md`](PLAN_CORRECCIONES.md)**. Léelo antes de coger cualquier
+> hallazgo de este documento.
+
 ---
 
 ## Resumen ejecutivo
@@ -42,9 +59,9 @@ cadena `<svg`, y nunca que el código resultante sea legible por un escáner.
 | [VF-008](#vf-008) | 🟠 Alta | XML | Dos implementaciones de XML divergentes; la exportada públicamente no se usa |
 | [VF-009](#vf-009) | 🟠 Alta | Desglose | El cliente descarta las operaciones exentas y no sujetas |
 | [VF-010](#vf-010) | 🟠 Alta | Desglose | El recargo de equivalencia no llega al XML ni a `CuotaTotal` |
-| [VF-011](#vf-011) | 🟠 Alta | Cadena | La cadena avanza aunque la AEAT rechace el registro |
+| ~~[VF-011](#vf-011)~~ | ⬛ Refutado | Cadena | ~~La cadena avanza aunque la AEAT rechace el registro~~ · **sustituido por VF-011R** en el plan |
 | [VF-012](#vf-012) | 🟠 Alta | Red | No se implementa el control de flujo (`EstadoEnvio` / `TiempoEsperaEnvio`) |
-| [VF-013](#vf-013) | 🟠 Alta | QR | La URL del QR lleva un parámetro de más y codifica mal los espacios |
+| [VF-013](#vf-013) | 🟠 Alta | QR | La URL del QR lleva un parámetro de más ~~y codifica mal los espacios~~ · **parcialmente rectificado** |
 | [VF-014](#vf-014) | 🟡 Media | Validación | La tabla de prefijos de CIF rechaza identificadores válidos |
 | [VF-015](#vf-015) | 🟡 Media | Huella | El offset horario se calcula mal en husos de media hora |
 | [VF-016](#vf-016) | 🟡 Media | Release | El pipeline de release apunta a `master`; la rama por defecto es `main` |
@@ -54,12 +71,17 @@ cadena `<svg`, y nunca que el código resultante sea legible por un escáner.
 | [VF-020](#vf-020) | 🟢 Baja | Red | El cliente SOAP ignora el código de estado HTTP |
 | [VF-021](#vf-021) | 🟢 Baja | Red | Sin soporte de compresión gzip |
 | [VF-022](#vf-022) | 🟢 Baja | Docs | Badge de Codecov apuntando a la rama `master` |
+| **VF-023 … VF-031** | 🔴🟠🟡 | varias | **Nueve hallazgos añadidos en la revisión.** Cuatro bloqueantes: el parseo de respuestas busca elementos inexistentes (toda respuesta real lanza `AeatError`); los enums no coinciden con el XSD; `PrimerRegistro` solo admite `S`; sin envío por lotes el control de flujo limita a 1 factura/minuto. Detalle en [`PLAN_CORRECCIONES.md` §3](PLAN_CORRECCIONES.md#3-hallazgos-nuevos) |
 
 **Severidades.** 🔴 Bloqueante: impide que un envío sea aceptado por la AEAT. 🟠 Alta: produce
 rechazos, pérdida de datos o corrupción de la cadena en casos reales. 🟡 Media: fallos
 concretos o deuda que bloquea la evolución. 🟢 Baja: robustez y pulido.
 
 ### Orden de ataque sugerido
+
+> **Superado por [`PLAN_CORRECCIONES.md` §6](PLAN_CORRECCIONES.md#6-las-fases)**, que desarrolla
+> este esbozo en cinco fases con esfuerzo estimado, dependencias y estrategia de verificación por
+> fase. Lo de abajo se conserva porque el razonamiento sobre dependencias sigue siendo válido.
 
 Las dependencias importan. VF-004 (formato de fecha) alimenta tanto el XML como la cadena de la
 huella, así que arreglarlo aisladamente rompe los tests de ambos módulos a la vez.
@@ -413,7 +435,29 @@ desde el XML y desde la huella.
 
 ### VF-011
 
-**La cadena avanza aunque la AEAT rechace el registro** · 🟠 Alta · `src/client/verifactu-client.ts`
+**~~La cadena avanza aunque la AEAT rechace el registro~~** · ⬛ **REFUTADO** · `src/client/verifactu-client.ts`
+
+> **Este hallazgo es incorrecto. No lo implementes.**
+>
+> El síntoma descrito abajo es cierto, pero es el **comportamiento correcto**: la cadena es local,
+> se genera al expedir la factura, y un registro rechazado permanece en ella. Revertirla sería una
+> no conformidad — la huella del registro ya va impresa en el QR de una factura probablemente
+> entregada, y suprimir un RF generado es justo lo que prohíben los arts. 7 y 10 del RRSIF. El
+> remedio normativo ante un rechazo es un alta de **subsanación** (`Subsanacion="S"`,
+> `RechazoPrevio="X"`), no rehacer el registro anterior. Tampoco se produce la cascada de rechazos
+> que este hallazgo predice: los códigos 2002/2003 relativos a la huella anterior están en la lista
+> de los que producen *aceptación*.
+>
+> El bug real está en el camino de reintento y es más grave: `submitInvoiceWithRetry` regenera el
+> registro con un `new Date()` nuevo, produciendo **dos huellas distintas para la misma factura**
+> justo cuando el primer envío pudo haber llegado. Ver **VF-011R** en
+> [`PLAN_CORRECCIONES.md` §2.1](PLAN_CORRECCIONES.md#21-vf-011--refutado-la-cadena-debe-avanzar-aunque-la-aeat-rechace),
+> con las cinco líneas de evidencia.
+>
+> Lo único que se salva de la propuesta original es separar `prepare()` de `commit()`, pero por
+> durabilidad frente a caídas del proceso, no por el rechazo.
+
+<details><summary>Análisis original (conservado por trazabilidad)</summary>
 
 `submitInvoice` (`src/client/verifactu-client.ts:155`) llama a `this.chain.processInvoice()`
 **antes** de enviar, y `processInvoice` actualiza el estado interno de forma incondicional
@@ -432,6 +476,8 @@ rechazados en cascada. Recuperarse exige reconstruir la cadena a mano.
 (`Correcto` o `AceptadoConErrores`), y revertir en cualquier otro caso. Conviene separar el
 cálculo de la huella del avance del estado —`prepare()` y `commit()`— para que la distinción sea
 explícita en el tipo.
+
+</details>
 
 ---
 
@@ -473,16 +519,27 @@ La URL de cotejo lleva **cuatro** parámetros: `nif`, `numserie`, `fecha` (dd-mm
 `importe` (con punto decimal). La huella no forma parte de ellos; incluirla alarga el contenido
 del QR sin motivo y desvía del formato normalizado.
 
-Segundo problema: `URLSearchParams.toString()` codifica el espacio como `+`, mientras que el
-percent-encoding requerido lo representa como `%20`. Los números de serie con espacios producen
-una URL que el validador puede interpretar mal. La barra `/`, frecuente en series tipo
-`FC-2026/0042`, sí se codifica correctamente como `%2F`.
+> **Rectificación.** La segunda mitad de este hallazgo era falsa y se ha retirado. Decía que
+> `URLSearchParams` codifica mal el espacio (como `+` en vez de `%20`) y proponía usar
+> `encodeURIComponent`. La especificación oficial del QR (v0.5.0, §4.1) adjunta su implementación
+> de referencia en Java, `java.net.URLEncoder.encode(param, "UTF-8")`, que codifica el espacio
+> **como `+`**. Contrastado carácter a carácter sobre todo ASCII 32-126: `URLSearchParams`
+> coincide con la referencia en 0 diferencias, `encodeURIComponent` diverge en 6. **El
+> comportamiento actual es el correcto**; aplicar la corrección propuesta lo habría roto.
+>
+> Lo que sí falla en su lugar: §4 exige contenido **ASCII 32-126** y §10 tipifica el error 2003
+> («el número de serie contiene caracteres no permitidos»). Hoy una serie con `Ñ` se codifica como
+> `%C3%91` y la Sede la rechaza — es un problema de **validación**, no de codificación. Y
+> `validateQrParams` **nunca se invoca desde `buildQrUrl`**, así que los datos inválidos llegan al
+> QR impreso sin un aviso. Detalle en
+> [`PLAN_CORRECCIONES.md` §2.2](PLAN_CORRECCIONES.md#22-vf-013--la-mitad-sobre-el-20-es-incorrecta).
 
-**Cómo arreglarlo.** Construir la query manualmente con `encodeURIComponent`, que sí produce
-`%20`.
+**Coste medido de llevar el parámetro de más.** La URL pasa de 133 a 205 caracteres, el QR de
+versión 8 a 10, y el módulo impreso encoge un 12 % en un código que debe caber entre 30 y 40 mm.
 
 **Detalle menor, mismo fichero.** `validateQrParams` (`:111`) da por válida cualquier huella de
-más de 20 caracteres; tras [VF-002](#vf-002) debería exigir `/^[0-9A-F]{64}$/`.
+más de 20 caracteres. La comprobación debe **eliminarse**, no endurecerse: la huella deja de viajar
+en la URL, y validar su formato corresponde al módulo de huella ([VF-002](#vf-002)), no aquí.
 
 ---
 

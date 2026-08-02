@@ -11,9 +11,11 @@ Librería TypeScript para integrar con el sistema **Verifactu de la AEAT** (Agen
 > que un envío no sería aceptado por la AEAT. La arquitectura, los modelos, la validación y la
 > capa de cliente sí están consolidados.
 >
-> El detalle completo —22 hallazgos con archivo, línea, qué exige la norma y cómo resolverlo—
-> está en **[`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md)**, y cada hallazgo
-> tiene su issue abierta. Las contribuciones son bienvenidas.
+> El detalle completo —31 hallazgos con archivo, línea, qué exige la norma y cómo resolverlo—
+> está en **[`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md)**, y el plan de
+> ejecución en cinco fases, con los vectores de prueba oficiales de la AEAT y la estrategia de
+> verificación, en **[`docs/PLAN_CORRECCIONES.md`](docs/PLAN_CORRECCIONES.md)**.
+> Las contribuciones son bienvenidas.
 
 [![CI](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml/badge.svg)](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/ramoncoroso/verifactu/branch/master/graph/badge.svg)](https://codecov.io/gh/ramoncoroso/verifactu)

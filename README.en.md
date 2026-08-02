@@ -9,9 +9,11 @@ TypeScript library for integrating with the **Spanish Tax Agency (AEAT) Verifact
 > would not be accepted by the AEAT. The architecture, models, validation and client layer are in
 > good shape.
 >
-> The full write-up — 22 findings with file, line, what the spec requires and how to fix it — is in
-> **[`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md)** (in Spanish), and each
-> finding has an open issue. Contributions welcome.
+> The full write-up — 31 findings with file, line, what the spec requires and how to fix it — is in
+> **[`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md)**, and the five-phase
+> remediation plan, including the AEAT's official test vectors and the verification strategy, in
+> **[`docs/PLAN_CORRECCIONES.md`](docs/PLAN_CORRECCIONES.md)**. Both in Spanish.
+> Contributions welcome.
 
 [![CI](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml/badge.svg)](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/ramoncoroso/verifactu/branch/master/graph/badge.svg)](https://codecov.io/gh/ramoncoroso/verifactu)
