@@ -5,9 +5,8 @@
  * vectores publicados por la AEAT. Es el oráculo externo que le faltaba a la
  * suite y que habría detectado VF-002, VF-003 y VF-004a de un golpe.
  *
- * Los que están marcados `it.fails` documentan un defecto abierto: **pasan
- * mientras el defecto exista**. Al corregirlo empiezan a fallar, lo que obliga a
- * quitar el `.fails` en el mismo PR. Corregir un hallazgo es quitar un `.fails`.
+ * Los `it.fails` que documentaban VF-002, VF-003 y VF-004a se retiraron al
+ * corregirlos: ahora estos tests fijan el comportamiento correcto.
  *
  * REGLA: prohibido `toContain` sobre la cadena de la huella. `toContain('IDEmisorFactura=B1')`
  * pasa aunque el campo esté en la posición equivocada, aunque falte otro campo y
@@ -18,10 +17,17 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
+  ALTA_HASH_FIELDS,
+  ANULACION_HASH_FIELDS,
+  buildAltaHashFields,
   buildAltaHashInput,
   buildAnulacionHashInput,
   calculateAltaHash,
   calculateAnulacionHash,
+  computeHuella,
+  isHuella,
+  type AltaHashFields,
+  type AnulacionHashFields,
 } from '../../src/crypto/hash.js';
 import {
   AEAT_ALTA_VECTORS,
@@ -68,51 +74,30 @@ describe('Vectores oficiales de la AEAT · integridad del fixture', () => {
 });
 
 describe('Nivel 1 · cadena de concatenación', () => {
-  // VF-004a: buildAltaHashInput formatea la fecha con formatXmlDate, que emite
-  // YYYY-MM-DD en lugar del dd-mm-yyyy que exige el XSD.
-  it.fails.each(AEAT_ALTA_VECTORS)(
-    '$id · reproduce la cadena oficial [VF-004a abierto]',
-    (v) => {
-      const input = buildAltaHashInput({
-        issuerNif: v.fields.IDEmisorFactura!,
-        invoiceNumber: v.fields.NumSerieFactura!,
-        issueDate: new Date('2024-01-01T12:00:00Z'),
-        invoiceType: v.fields.TipoFactura!,
-        vatTotal: Number(v.fields.CuotaTotal),
-        totalAmount: Number(v.fields.ImporteTotal),
-        previousHash: v.fields.Huella!,
-        generationTimestamp: new Date(v.fields.FechaHoraHusoGenRegistro!),
-      });
-      expect(input).toBe(v.input);
-    }
-  );
-
-  // VF-003: los campos de anulación deben llevar el sufijo `Anulada`.
-  // VF-004a: y además la fecha sale en formato ISO.
-  it.fails('anulación · reproduce la cadena oficial [VF-003 y VF-004a abiertos]', () => {
-    const v = AEAT_ANULACION_VECTOR;
-    const input = buildAnulacionHashInput({
-      issuerNif: v.fields.IDEmisorFacturaAnulada!,
-      invoiceNumber: v.fields.NumSerieFacturaAnulada!,
-      issueDate: new Date('2024-01-01T12:00:00Z'),
-      previousHash: v.fields.Huella!,
-      generationTimestamp: new Date(v.fields.FechaHoraHusoGenRegistro!),
-    });
-    expect(input).toBe(v.input);
+  // Con la API de campos como texto, el vector se alimenta VERBATIM: no hay que
+  // fabricar un Date intermedio ni depender del huso del proceso. Ésta es la
+  // forma correcta del test, y solo fue posible tras reescribir la API.
+  it.each(AEAT_ALTA_VECTORS)('$id · reproduce la cadena oficial', (v) => {
+    expect(buildAltaHashInput(v.fields as unknown as AltaHashFields)).toBe(v.input);
   });
 
-  // Aserto quirúrgico sobre VF-003, independiente del formato de fecha: aísla el
-  // defecto de los nombres de campo para que no quede tapado por VF-004a.
-  it.fails('la cadena de anulación usa los nombres con sufijo Anulada [VF-003 abierto]', () => {
-    const input = buildAnulacionHashInput({
-      issuerNif: '89890001K',
-      invoiceNumber: '12345679/G34',
-      issueDate: new Date('2024-01-01T12:00:00Z'),
-      previousHash: '',
-      generationTimestamp: new Date('2024-01-01T19:20:40+01:00'),
-    });
-    const nombres = input.split('&').map((p) => p.split('=')[0]);
-    expect(nombres).toEqual([
+  it('anulación · reproduce la cadena oficial', () => {
+    const v = AEAT_ANULACION_VECTOR;
+    expect(buildAnulacionHashInput(v.fields as unknown as AnulacionHashFields)).toBe(v.input);
+  });
+
+  it('el orden y los nombres de los campos son los del documento', () => {
+    expect([...ALTA_HASH_FIELDS]).toEqual([
+      'IDEmisorFactura',
+      'NumSerieFactura',
+      'FechaExpedicionFactura',
+      'TipoFactura',
+      'CuotaTotal',
+      'ImporteTotal',
+      'Huella',
+      'FechaHoraHusoGenRegistro',
+    ]);
+    expect([...ANULACION_HASH_FIELDS]).toEqual([
       'IDEmisorFacturaAnulada',
       'NumSerieFacturaAnulada',
       'FechaExpedicionFacturaAnulada',
@@ -120,49 +105,92 @@ describe('Nivel 1 · cadena de concatenación', () => {
       'FechaHoraHusoGenRegistro',
     ]);
   });
+
+  it('recorta los extremos de cada valor, y solo los extremos', () => {
+    const v = AEAT_ALTA_VECTORS[0]!;
+    const conEspacios = Object.fromEntries(
+      Object.entries(v.fields).map(([k, val]) => [k, val === '' ? '' : `  ${val}  `])
+    ) as unknown as AltaHashFields;
+    expect(buildAltaHashInput(conEspacios)).toBe(v.input);
+  });
 });
 
 describe('Nivel 0 · el digest', () => {
-  // VF-002: calculateAltaHash devuelve Base64 en vez de hexadecimal mayúsculas.
-  it.fails.each(AEAT_ALTA_VECTORS)('$id · reproduce la huella oficial [VF-002 abierto]', (v) => {
-    const huella = calculateAltaHash({
-      issuerNif: v.fields.IDEmisorFactura!,
-      invoiceNumber: v.fields.NumSerieFactura!,
-      issueDate: new Date('2024-01-01T12:00:00Z'),
-      invoiceType: v.fields.TipoFactura!,
-      vatTotal: Number(v.fields.CuotaTotal),
-      totalAmount: Number(v.fields.ImporteTotal),
-      previousHash: v.fields.Huella!,
-      generationTimestamp: new Date(v.fields.FechaHoraHusoGenRegistro!),
-    });
-    expect(huella).toBe(v.digest);
+  it.each(AEAT_ALTA_VECTORS)('$id · reproduce la huella oficial', (v) => {
+    expect(calculateAltaHash(v.fields as unknown as AltaHashFields)).toBe(v.digest);
   });
 
-  it.fails('anulación · reproduce la huella oficial [VF-002 y VF-003 abiertos]', () => {
+  it('anulación · reproduce la huella oficial', () => {
     const v = AEAT_ANULACION_VECTOR;
-    const huella = calculateAnulacionHash({
-      issuerNif: v.fields.IDEmisorFacturaAnulada!,
-      invoiceNumber: v.fields.NumSerieFacturaAnulada!,
-      issueDate: new Date('2024-01-01T12:00:00Z'),
-      previousHash: v.fields.Huella!,
-      generationTimestamp: new Date(v.fields.FechaHoraHusoGenRegistro!),
-    });
-    expect(huella).toBe(v.digest);
+    expect(calculateAnulacionHash(v.fields as unknown as AnulacionHashFields)).toBe(v.digest);
   });
 
-  // Aserto de formato, independiente de que la cadena de entrada sea correcta.
-  // Aísla VF-002 de VF-003 y VF-004a.
-  it.fails('la huella es hexadecimal en mayúsculas de 64 caracteres [VF-002 abierto]', () => {
-    const huella = calculateAltaHash({
-      issuerNif: 'B12345678',
-      invoiceNumber: 'A001',
-      issueDate: new Date('2024-01-15T12:00:00Z'),
+  it('la huella es hexadecimal en mayúsculas de 64 caracteres', () => {
+    expect(computeHuella('cualquier cosa')).toMatch(/^[0-9A-F]{64}$/);
+    expect(isHuella(computeHuella(''))).toBe(true);
+  });
+});
+
+describe('Extremo a extremo · desde el modelo de dominio', () => {
+  // Recorre el pipeline entero —modelo, totales, formateo, concatenación,
+  // digest— y aterriza en un número publicado por la AEAT. Ningún error
+  // intermedio sobrevive a esto.
+  it('reproduce el vector 6.1 partiendo de un Invoice', () => {
+    const v = AEAT_ALTA_VECTORS[0]!;
+    const invoice = {
+      operationType: 'A',
+      issuer: { taxId: { type: 'NIF', value: '89890001K' }, name: 'Emisor de prueba' },
       invoiceType: 'F1',
-      vatTotal: 21,
-      totalAmount: 121,
-      previousHash: '',
-      generationTimestamp: new Date('2024-01-15T12:00:00+01:00'),
+      id: {
+        // El vector usa `12345678/G33` como NumSerieFactura completo.
+        series: '12345678/',
+        number: 'G33',
+        issueDate: new Date('2024-01-01T12:00:00Z'),
+      },
+      taxBreakdown: { vatBreakdowns: [{ taxBase: 111.1, vatRate: 11.12, vatAmount: 12.35 }] },
+      totalAmount: 123.45,
+    } as unknown as Parameters<typeof buildAltaHashFields>[0];
+
+    const fields = buildAltaHashFields(invoice, '', new Date('2024-01-01T18:20:30Z'), {
+      timeZone: 'Europe/Madrid',
     });
-    expect(huella).toMatch(/^[0-9A-F]{64}$/);
+
+    expect(fields).toEqual(v.fields);
+    expect(calculateAltaHash(fields)).toBe(v.digest);
+  });
+
+  // La misma factura debe producir la misma huella en cualquier zona del proceso
+  // cuando se pasa `timeZone`. Es lo que convierte VF-028 en inalcanzable para
+  // quien use la opción.
+  it('con timeZone explícita, el resultado no depende del entorno', () => {
+    const invoice = {
+      operationType: 'A',
+      issuer: { taxId: { type: 'NIF', value: '89890001K' }, name: 'X' },
+      invoiceType: 'F1',
+      id: { series: '12345678/', number: 'G33', issueDate: new Date('2024-01-01T12:00:00Z') },
+      taxBreakdown: { vatBreakdowns: [{ taxBase: 111.1, vatRate: 11.12, vatAmount: 12.35 }] },
+      totalAmount: 123.45,
+    } as unknown as Parameters<typeof buildAltaHashFields>[0];
+    const at = new Date('2024-01-01T18:20:30Z');
+    const tz = 'Europe/Madrid';
+
+    const previo = process.env.TZ;
+    const huellas: string[] = [];
+    for (const entorno of ['UTC', 'America/New_York', 'Asia/Kolkata', 'Europe/Madrid']) {
+      process.env.TZ = entorno;
+      huellas.push(calculateAltaHash(buildAltaHashFields(invoice, '', at, { timeZone: tz })));
+    }
+    process.env.TZ = previo;
+
+    expect(new Set(huellas).size).toBe(1);
+    expect(huellas[0]).toBe(AEAT_ALTA_VECTORS[0]!.digest);
+  });
+
+  it('la cadena encadena: cada huella alimenta a la siguiente', () => {
+    const [uno, dos] = AEAT_ALTA_VECTORS;
+    expect(calculateAltaHash(uno!.fields as unknown as AltaHashFields)).toBe(dos!.fields.Huella);
+    expect(calculateAltaHash(dos!.fields as unknown as AltaHashFields)).toBe(
+      AEAT_ANULACION_VECTOR.fields.Huella
+    );
   });
 });

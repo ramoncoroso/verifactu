@@ -7,7 +7,7 @@
 import type { Invoice } from '../models/invoice.js';
 import type { Environment } from '../client/endpoints.js';
 import { getQrVerificationUrl } from '../client/endpoints.js';
-import { formatXmlNumber } from '../xml/builder.js';
+import { buildNumSerieFactura, formatAeatAmount, formatAeatDate } from '../format/aeat.js';
 
 /**
  * QR URL parameters according to AEAT specification
@@ -29,22 +29,16 @@ export interface QrUrlParams {
  * Build QR URL parameters from an invoice
  */
 export function buildQrUrlParams(invoice: Invoice & { hash: string }): QrUrlParams {
-  const numserie = invoice.id.series
-    ? `${invoice.id.series}${invoice.id.number}`
-    : invoice.id.number;
-
-  // Format date as DD-MM-YYYY for QR
-  const date = invoice.id.issueDate;
-  const day = date.getDate().toString().padStart(2, '0');
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const year = date.getFullYear().toString();
-  const fecha = `${day}-${month}-${year}`;
+  // Misma composición que el XML y la huella: si divergen, la factura es válida
+  // pero no cotejable, y el fallo es silencioso.
+  const numserie = buildNumSerieFactura(invoice.id);
+  const fecha = formatAeatDate(invoice.id.issueDate);
 
   return {
     nif: invoice.issuer.taxId.value,
     numserie,
     fecha,
-    importe: formatXmlNumber(invoice.totalAmount, 2),
+    importe: formatAeatAmount(invoice.totalAmount),
     huella: invoice.hash,
   };
 }

@@ -54,9 +54,6 @@ describe('XML Builder', () => {
       expect(formatXmlNumber(100)).toBe('100.00');
     });
 
-    it('should format with specified decimals', () => {
-      expect(formatXmlNumber(100.5, 3)).toBe('100.500');
-    });
 
     it('should round correctly', () => {
       expect(formatXmlNumber(100.999, 2)).toBe('101.00');

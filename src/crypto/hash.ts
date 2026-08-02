@@ -1,24 +1,74 @@
 /**
- * SHA-256 Hash Implementation for Verifactu
+ * Cálculo de la huella («hash») de los registros de facturación.
  *
- * Uses Node.js crypto module (available in Node.js, Deno, and Bun)
- * for calculating record hashes according to AEAT specifications.
+ * Fuente: AEAT, «Detalle de las especificaciones técnicas para generación de la
+ * huella o hash de los registros de facturación», v0.1.2 (27/08/2024).
+ *
+ * Dos decisiones de diseño, ambas para hacer imposibles defectos que ya
+ * ocurrieron:
+ *
+ *  1. **Los campos entran ya como texto.** Este módulo no formatea fechas ni
+ *     importes. Antes lo hacía, con un formateador distinto del que usaba el XML,
+ *     de modo que la huella no podía coincidir con lo que se enviaba. Ahora el
+ *     texto se produce una sola vez en `src/format/aeat.ts` y alimenta a los dos.
+ *     El invariante que exige el apartado 3 del documento —«los valores de los
+ *     campos deberán tener la misma información contenida en el campo
+ *     correspondiente del fichero XML»— pasa a ser estructural.
+ *
+ *  2. **Los nombres de campo son claves de un tipo.** Escribir `IDEmisorFactura`
+ *     en un registro de anulación, donde toca `IDEmisorFacturaAnulada`, es ahora
+ *     un error de compilación en lugar de un fallo silencioso.
  */
 
 import { createHash } from 'node:crypto';
 import { HashError } from '../errors/crypto-errors.js';
+import {
+  buildNumSerieFactura,
+  formatAeatAmount,
+  formatAeatDate,
+  formatAeatTimestamp,
+  normalizeAeatText,
+} from '../format/aeat.js';
 import type { Invoice, InvoiceCancellation } from '../models/invoice.js';
-import { formatXmlDate } from '../xml/builder.js';
+import { calculateCuotaTotal } from '../models/tax.js';
+
+/** Campos de la huella de un registro de alta, en el orden en que se concatenan. */
+export const ALTA_HASH_FIELDS = [
+  'IDEmisorFactura',
+  'NumSerieFactura',
+  'FechaExpedicionFactura',
+  'TipoFactura',
+  'CuotaTotal',
+  'ImporteTotal',
+  'Huella',
+  'FechaHoraHusoGenRegistro',
+] as const;
+
+/** Campos de la huella de un registro de anulación, en orden. */
+export const ANULACION_HASH_FIELDS = [
+  'IDEmisorFacturaAnulada',
+  'NumSerieFacturaAnulada',
+  'FechaExpedicionFacturaAnulada',
+  'Huella',
+  'FechaHoraHusoGenRegistro',
+] as const;
+
+/** Valores ya formateados de los campos de la huella de un alta. */
+export type AltaHashFields = Record<(typeof ALTA_HASH_FIELDS)[number], string>;
+
+/** Valores ya formateados de los campos de la huella de una anulación. */
+export type AnulacionHashFields = Record<(typeof ANULACION_HASH_FIELDS)[number], string>;
 
 /**
- * Calculate SHA-256 hash of a string
- * Returns the hash as a Base64 encoded string
+ * SHA-256 en hexadecimal MAYÚSCULAS, 64 caracteres.
+ *
+ * Único punto del proyecto que invoca `createHash`. La versión anterior exponía
+ * `sha256()` en Base64 y `sha256Hex()` en minúsculas; la primera era la que se
+ * usaba —y era el defecto— y la segunda no la llamaba nadie.
  */
-export function sha256(data: string): string {
+export function computeHuella(input: string): string {
   try {
-    const hash = createHash('sha256');
-    hash.update(data, 'utf8');
-    return hash.digest('base64');
+    return createHash('sha256').update(input, 'utf8').digest('hex').toUpperCase();
   } catch (error) {
     throw new HashError(
       'Failed to calculate SHA-256 hash',
@@ -27,196 +77,109 @@ export function sha256(data: string): string {
   }
 }
 
-/**
- * Calculate SHA-256 hash and return as hex string
- */
-export function sha256Hex(data: string): string {
-  try {
-    const hash = createHash('sha256');
-    hash.update(data, 'utf8');
-    return hash.digest('hex');
-  } catch (error) {
-    throw new HashError(
-      'Failed to calculate SHA-256 hash',
-      error instanceof Error ? error : undefined
-    );
-  }
+/** Formato de una huella válida. */
+export const HUELLA_PATTERN = /^[0-9A-F]{64}$/;
+
+/** Comprueba que un valor tiene forma de huella. */
+export function isHuella(value: string): boolean {
+  return HUELLA_PATTERN.test(value);
+}
+
+function concat(order: readonly string[], fields: Record<string, string>): string {
+  // `nombre=valor`, unidos por `&`, sin `&` final, sin URL-encoding, y con cada
+  // valor recortado por los extremos. Un campo vacío se emite igualmente: es el
+  // caso de `Huella=` en el primer registro de la cadena.
+  return order.map((name) => `${name}=${normalizeAeatText(fields[name])}`).join('&');
+}
+
+/** Cadena a hashear de un registro de alta. */
+export function buildAltaHashInput(fields: AltaHashFields): string {
+  return concat(ALTA_HASH_FIELDS, fields);
+}
+
+/** Cadena a hashear de un registro de anulación. */
+export function buildAnulacionHashInput(fields: AnulacionHashFields): string {
+  return concat(ANULACION_HASH_FIELDS, fields);
+}
+
+/** Huella de un registro de alta. */
+export function calculateAltaHash(fields: AltaHashFields): string {
+  return computeHuella(buildAltaHashInput(fields));
+}
+
+/** Huella de un registro de anulación. */
+export function calculateAnulacionHash(fields: AnulacionHashFields): string {
+  return computeHuella(buildAnulacionHashInput(fields));
+}
+
+/** Opciones de formateo compartidas por el XML y la huella. */
+export interface HashFieldOptions {
+  /** Zona IANA con la que se interpretan las fechas. Por defecto, la del proceso. */
+  timeZone?: string | undefined;
 }
 
 /**
- * Hash input fields according to AEAT Verifactu specification
+ * Construye los campos de la huella de una factura.
  *
- * For Alta (registration) records, the hash is calculated from:
- * - IDEmisorFactura (NIF)
- * - NumSerieFactura
- * - FechaExpedicionFactura
- * - TipoFactura
- * - CuotaTotal
- * - ImporteTotal
- * - Huella anterior (previous hash)
- * - FechaHoraHusoGenRegistro
+ * Único punto donde el modelo de dominio se convierte en el texto que verán tanto
+ * la huella como el XML.
  */
-export interface AltaHashInput {
-  /** Issuer NIF */
-  issuerNif: string;
-  /** Invoice number (with series if applicable) */
-  invoiceNumber: string;
-  /** Issue date */
-  issueDate: Date;
-  /** Invoice type (F1, F2, etc.) */
-  invoiceType: string;
-  /** Total VAT amount */
-  vatTotal: number;
-  /** Total invoice amount */
-  totalAmount: number;
-  /** Previous record hash (empty string for first record) */
-  previousHash: string;
-  /** Generation timestamp */
-  generationTimestamp: Date;
+export function buildAltaHashFields(
+  invoice: Invoice,
+  previousHash: string,
+  generationTimestamp: Date,
+  options: HashFieldOptions = {}
+): AltaHashFields {
+  const { timeZone } = options;
+  return {
+    IDEmisorFactura: normalizeAeatText(invoice.issuer.taxId.value),
+    NumSerieFactura: buildNumSerieFactura(invoice.id),
+    FechaExpedicionFactura: formatAeatDate(invoice.id.issueDate, timeZone),
+    TipoFactura: invoice.invoiceType,
+    CuotaTotal: formatAeatAmount(calculateCuotaTotal(invoice.taxBreakdown)),
+    ImporteTotal: formatAeatAmount(invoice.totalAmount),
+    Huella: previousHash,
+    FechaHoraHusoGenRegistro: formatAeatTimestamp(generationTimestamp, timeZone),
+  };
 }
 
-/**
- * Build the hash input string for an Alta record
- */
-export function buildAltaHashInput(input: AltaHashInput): string {
-  const parts = [
-    `IDEmisorFactura=${input.issuerNif}`,
-    `NumSerieFactura=${input.invoiceNumber}`,
-    `FechaExpedicionFactura=${formatXmlDate(input.issueDate)}`,
-    `TipoFactura=${input.invoiceType}`,
-    `CuotaTotal=${formatAmount(input.vatTotal)}`,
-    `ImporteTotal=${formatAmount(input.totalAmount)}`,
-    `Huella=${input.previousHash}`,
-    `FechaHoraHusoGenRegistro=${formatTimestamp(input.generationTimestamp)}`,
-  ];
-
-  return parts.join('&');
+/** Construye los campos de la huella de una anulación. */
+export function buildAnulacionHashFields(
+  cancellation: InvoiceCancellation,
+  previousHash: string,
+  generationTimestamp: Date,
+  options: HashFieldOptions = {}
+): AnulacionHashFields {
+  const { timeZone } = options;
+  return {
+    IDEmisorFacturaAnulada: normalizeAeatText(cancellation.issuer.taxId.value),
+    NumSerieFacturaAnulada: buildNumSerieFactura(cancellation.invoiceId),
+    FechaExpedicionFacturaAnulada: formatAeatDate(cancellation.invoiceId.issueDate, timeZone),
+    Huella: previousHash,
+    FechaHoraHusoGenRegistro: formatAeatTimestamp(generationTimestamp, timeZone),
+  };
 }
 
-/**
- * Calculate hash for an Alta (registration) record
- */
-export function calculateAltaHash(input: AltaHashInput): string {
-  const hashInput = buildAltaHashInput(input);
-  return sha256(hashInput);
-}
-
-/**
- * Hash input fields for Anulación (cancellation) records
- *
- * For Anulación records, the hash is calculated from:
- * - IDEmisorFactura (NIF)
- * - NumSerieFactura
- * - FechaExpedicionFactura
- * - Huella anterior (previous hash)
- * - FechaHoraHusoGenRegistro
- */
-export interface AnulacionHashInput {
-  /** Issuer NIF */
-  issuerNif: string;
-  /** Invoice number (with series if applicable) */
-  invoiceNumber: string;
-  /** Issue date */
-  issueDate: Date;
-  /** Previous record hash (empty string for first record) */
-  previousHash: string;
-  /** Generation timestamp */
-  generationTimestamp: Date;
-}
-
-/**
- * Build the hash input string for an Anulación record
- */
-export function buildAnulacionHashInput(input: AnulacionHashInput): string {
-  const parts = [
-    `IDEmisorFactura=${input.issuerNif}`,
-    `NumSerieFactura=${input.invoiceNumber}`,
-    `FechaExpedicionFactura=${formatXmlDate(input.issueDate)}`,
-    `Huella=${input.previousHash}`,
-    `FechaHoraHusoGenRegistro=${formatTimestamp(input.generationTimestamp)}`,
-  ];
-
-  return parts.join('&');
-}
-
-/**
- * Calculate hash for an Anulación (cancellation) record
- */
-export function calculateAnulacionHash(input: AnulacionHashInput): string {
-  const hashInput = buildAnulacionHashInput(input);
-  return sha256(hashInput);
-}
-
-/**
- * Calculate hash for an invoice record
- */
+/** Huella de una factura, a partir del modelo de dominio. */
 export function calculateInvoiceHash(
   invoice: Invoice,
   previousHash: string,
-  generationTimestamp: Date
+  generationTimestamp: Date,
+  options?: HashFieldOptions
 ): string {
-  const vatTotal = invoice.taxBreakdown.vatBreakdowns?.reduce(
-    (sum, v) => sum + v.vatAmount,
-    0
-  ) ?? 0;
-
-  return calculateAltaHash({
-    issuerNif: invoice.issuer.taxId.value,
-    invoiceNumber: invoice.id.series
-      ? `${invoice.id.series}${invoice.id.number}`
-      : invoice.id.number,
-    issueDate: invoice.id.issueDate,
-    invoiceType: invoice.invoiceType,
-    vatTotal,
-    totalAmount: invoice.totalAmount,
-    previousHash,
-    generationTimestamp,
-  });
+  return calculateAltaHash(
+    buildAltaHashFields(invoice, previousHash, generationTimestamp, options)
+  );
 }
 
-/**
- * Calculate hash for a cancellation record
- */
+/** Huella de una anulación, a partir del modelo de dominio. */
 export function calculateCancellationHash(
   cancellation: InvoiceCancellation,
   previousHash: string,
-  generationTimestamp: Date
+  generationTimestamp: Date,
+  options?: HashFieldOptions
 ): string {
-  return calculateAnulacionHash({
-    issuerNif: cancellation.issuer.taxId.value,
-    invoiceNumber: cancellation.invoiceId.series
-      ? `${cancellation.invoiceId.series}${cancellation.invoiceId.number}`
-      : cancellation.invoiceId.number,
-    issueDate: cancellation.invoiceId.issueDate,
-    previousHash,
-    generationTimestamp,
-  });
-}
-
-/**
- * Format amount for hash input (2 decimal places)
- */
-function formatAmount(amount: number): string {
-  return amount.toFixed(2);
-}
-
-/**
- * Format timestamp for hash input (ISO format without milliseconds)
- */
-function formatTimestamp(date: Date): string {
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-  const hours = date.getHours().toString().padStart(2, '0');
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  const seconds = date.getSeconds().toString().padStart(2, '0');
-
-  // Get timezone offset
-  const offsetMinutes = date.getTimezoneOffset();
-  const offsetHours = Math.abs(Math.floor(offsetMinutes / 60));
-  const offsetMins = Math.abs(offsetMinutes % 60);
-  const offsetSign = offsetMinutes <= 0 ? '+' : '-';
-  const timezone = `${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMins.toString().padStart(2, '0')}`;
-
-  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${timezone}`;
+  return calculateAnulacionHash(
+    buildAnulacionHashFields(cancellation, previousHash, generationTimestamp, options)
+  );
 }
