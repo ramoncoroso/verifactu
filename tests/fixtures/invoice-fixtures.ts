@@ -72,6 +72,8 @@ export function createTestInvoice(overrides?: Partial<Invoice>): Invoice {
   return {
     operationType: 'A',
     invoiceType: 'F1',
+    // Obligatoria en el XSD: sin ella el documento no valida.
+    description: 'Servicios de prueba',
     id: createTestInvoiceId('001'),
     issuer: createTestIssuer(),
     operationRegimes: ['01'],

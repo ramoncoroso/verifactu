@@ -136,10 +136,19 @@ export function extractSoapBody(envelope: string): string {
     throw new Error('No se encontró soapenv:Body en el sobre');
   }
   const inner = match[1].trim();
-  // El sobre declara los prefijos en el elemento raíz; al recortar el Body hay
-  // que reponer esas declaraciones o el documento suelto no resuelve los ns.
-  const nsDecls = [...envelope.matchAll(/xmlns:([\w.-]+)="([^"]+)"/g)]
-    .filter(([, prefix]) => prefix !== 'soapenv' && prefix !== 'soap' && prefix !== 'env')
+
+  // Solo se reponen las declaraciones del elemento `Envelope` en sí, y solo las
+  // que el contenido no traiga ya. Recogerlas de todo el sobre —como hacía la
+  // versión anterior— duplicaba las que el propio mensaje declara, y libxml2
+  // rechazaba el documento con «Attribute xmlns:sfLR redefined»: un fallo del
+  // helper que se leía como un fallo del generador.
+  const aperturaEnvelope = /<(?:[\w.-]+:)?Envelope[^>]*>/.exec(envelope)?.[0] ?? '';
+  const yaDeclarados = new Set(
+    [...inner.matchAll(/xmlns:([\w.-]+)=/g)].map(([, prefix]) => prefix)
+  );
+  const nsDecls = [...aperturaEnvelope.matchAll(/xmlns:([\w.-]+)="([^"]+)"/g)]
+    .filter(([, prefix]) => !['soapenv', 'soap', 'env'].includes(prefix!))
+    .filter(([, prefix]) => !yaDeclarados.has(prefix!))
     .map(([, prefix, uri]) => ` xmlns:${prefix}="${uri}"`)
     .join('');
 

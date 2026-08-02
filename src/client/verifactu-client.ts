@@ -14,7 +14,16 @@ import type { ChainState } from '../crypto/chain.js';
 import { SoapClient, createSoapClient } from './soap-client.js';
 import { getEndpoints, SOAP_ACTIONS, type Environment, type ServiceEndpoints } from './endpoints.js';
 import { AeatError } from '../errors/network-errors.js';
-import { formatXmlDate, formatXmlDateTime, formatXmlNumber } from '../xml/builder.js';
+import { formatAeatDate } from '../format/aeat.js';
+import {
+  mapCabecera,
+  mapCancellationToRegistroAnulacion,
+  mapInvoiceToRegistroAlta,
+} from '../xml/mapping/invoice-to-registro.js';
+import {
+  buildRegFactuSistemaFacturacion,
+  wrapSoapEnvelope,
+} from '../xml/verifactu/registro.js';
 import { findNode, getChildText } from '../xml/parser.js';
 import type { XmlNode } from '../xml/parser.js';
 import { withRetry, type RetryOptions } from './retry.js';
@@ -532,207 +541,58 @@ export class VerifactuClient {
   /**
    * Build SOAP body for Alta request
    */
+  /**
+   * Construye el envío de un alta.
+   *
+   * Delega en el generador conforme. La versión anterior interpolaba los valores
+   * en plantillas de cadena sin escapar nada: una razón social con `&` rompía el
+   * documento y una descripción con etiquetas inyectaba elementos.
+   */
   private buildAltaSoapBody(
     invoice: Invoice & { hash: string },
     timestamp: Date,
     isFirst: boolean
   ): string {
-    const vatTotal = invoice.taxBreakdown.vatBreakdowns?.reduce(
-      (sum, v) => sum + v.vatAmount,
-      0
-    ) ?? 0;
-
-    // Build invoice number
-    const numSerieFactura = invoice.id.series
-      ? `${invoice.id.series}${invoice.id.number}`
-      : invoice.id.number;
-
-    let xml = `<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sum="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd">
-  <soapenv:Header/>
-  <soapenv:Body>
-    <sum:RegFactuSistemaFacturacion>
-      <sum:Cabecera>
-        <sum:ObligadoEmision>
-          <sum:NombreRazon>${invoice.issuer.name}</sum:NombreRazon>
-          <sum:NIF>${invoice.issuer.taxId.value}</sum:NIF>
-        </sum:ObligadoEmision>
-      </sum:Cabecera>
-      <sum:RegistroFactura>
-        <sum:IDFactura>
-          <sum:IDEmisorFactura>${invoice.issuer.taxId.value}</sum:IDEmisorFactura>
-          <sum:NumSerieFactura>${numSerieFactura}</sum:NumSerieFactura>
-          <sum:FechaExpedicionFactura>${formatXmlDate(invoice.id.issueDate)}</sum:FechaExpedicionFactura>
-        </sum:IDFactura>
-        <sum:NombreRazonEmisor>${invoice.issuer.name}</sum:NombreRazonEmisor>
-        <sum:TipoFactura>${invoice.invoiceType}</sum:TipoFactura>`;
-
-    // Add recipients if present
-    if (invoice.recipients && invoice.recipients.length > 0) {
-      xml += `\n        <sum:Destinatarios>`;
-      for (const recipient of invoice.recipients) {
-        xml += `\n          <sum:IDDestinatario>`;
-        if (recipient.taxId.type === 'NIF') {
-          xml += `\n            <sum:NIF>${recipient.taxId.value}</sum:NIF>`;
-        } else {
-          xml += `\n            <sum:IDOtro>
-              <sum:CodigoPais>${recipient.taxId.country ?? 'ES'}</sum:CodigoPais>
-              <sum:IDType>${recipient.taxId.type}</sum:IDType>
-              <sum:ID>${recipient.taxId.value}</sum:ID>
-            </sum:IDOtro>`;
-        }
-        xml += `\n            <sum:NombreRazon>${recipient.name}</sum:NombreRazon>`;
-        xml += `\n          </sum:IDDestinatario>`;
-      }
-      xml += `\n        </sum:Destinatarios>`;
-    }
-
-    // Add description if present
-    if (invoice.description) {
-      xml += `\n        <sum:DescripcionOperacion>${invoice.description}</sum:DescripcionOperacion>`;
-    }
-
-    // Add tax breakdown
-    xml += `\n        <sum:Desglose>`;
-    if (invoice.taxBreakdown.vatBreakdowns) {
-      for (const vat of invoice.taxBreakdown.vatBreakdowns) {
-        xml += `\n          <sum:DetalleDesglose>
-            <sum:Impuesto>01</sum:Impuesto>
-            <sum:ClaveRegimen>01</sum:ClaveRegimen>
-            <sum:CalificacionOperacion>S1</sum:CalificacionOperacion>
-            <sum:TipoImpositivo>${formatXmlNumber(vat.vatRate, 2)}</sum:TipoImpositivo>
-            <sum:BaseImponibleOImporteNoSujeto>${formatXmlNumber(vat.taxBase, 2)}</sum:BaseImponibleOImporteNoSujeto>
-            <sum:CuotaRepercutida>${formatXmlNumber(vat.vatAmount, 2)}</sum:CuotaRepercutida>
-          </sum:DetalleDesglose>`;
-      }
-    }
-    xml += `\n        </sum:Desglose>`;
-
-    // Add totals
-    xml += `\n        <sum:CuotaTotal>${formatXmlNumber(vatTotal, 2)}</sum:CuotaTotal>`;
-    xml += `\n        <sum:ImporteTotal>${formatXmlNumber(invoice.totalAmount, 2)}</sum:ImporteTotal>`;
-
-    // Add chain reference
-    if (isFirst) {
-      xml += `\n        <sum:Encadenamiento>
-          <sum:PrimerRegistro>S</sum:PrimerRegistro>
-        </sum:Encadenamiento>`;
-    } else if (invoice.chainReference) {
-      const prevNum = invoice.chainReference.previousSeries
-        ? `${invoice.chainReference.previousSeries}${invoice.chainReference.previousNumber}`
-        : invoice.chainReference.previousNumber;
-      xml += `\n        <sum:Encadenamiento>
-          <sum:PrimerRegistro>N</sum:PrimerRegistro>
-          <sum:RegistroAnterior>
-            <sum:Huella>${invoice.chainReference.previousHash}</sum:Huella>
-            <sum:FechaExpedicionFactura>${formatXmlDate(invoice.chainReference.previousDate)}</sum:FechaExpedicionFactura>
-            <sum:NumSerieFactura>${prevNum}</sum:NumSerieFactura>
-          </sum:RegistroAnterior>
-        </sum:Encadenamiento>`;
-    }
-
-    // Add software info
-    xml += `\n        <sum:SistemaInformatico>
-          <sum:NombreRazon>${this.software.name}</sum:NombreRazon>
-          <sum:NIF>${this.software.developerTaxId}</sum:NIF>
-          <sum:NombreSistemaInformatico>${this.software.name}</sum:NombreSistemaInformatico>
-          <sum:IdSistemaInformatico>${this.software.installationNumber}</sum:IdSistemaInformatico>
-          <sum:Version>${this.software.version}</sum:Version>
-          <sum:NumeroInstalacion>${this.software.installationNumber}</sum:NumeroInstalacion>
-          <sum:TipoUsoPosibleSoloVerifactu>${this.software.systemType}</sum:TipoUsoPosibleSoloVerifactu>
-          <sum:TipoUsoPosibleMultiOT>N</sum:TipoUsoPosibleMultiOT>
-          <sum:IndicadorMultiplesOT>N</sum:IndicadorMultiplesOT>
-        </sum:SistemaInformatico>`;
-
-    // Add timestamp and hash
-    xml += `\n        <sum:FechaHoraHusoGenRegistro>${formatXmlDateTime(timestamp)}</sum:FechaHoraHusoGenRegistro>`;
-    xml += `\n        <sum:Huella>${invoice.hash}</sum:Huella>`;
-
-    xml += `\n      </sum:RegistroFactura>
-    </sum:RegFactuSistemaFacturacion>
-  </soapenv:Body>
-</soapenv:Envelope>`;
-
-    return xml;
+    const previousHash = invoice.chainReference?.previousHash ?? '';
+    const alta = mapInvoiceToRegistroAlta(
+      invoice,
+      this.software,
+      previousHash,
+      timestamp,
+      invoice.hash,
+      { isFirstRecord: isFirst }
+    );
+    return wrapSoapEnvelope(
+      buildRegFactuSistemaFacturacion(mapCabecera(invoice.issuer), [{ alta }])
+    );
   }
 
   /**
-   * Build SOAP body for Anulación request
+   * Construye el envío de una anulación.
+   *
+   * Va en el **mismo** mensaje `RegFactuSistemaFacturacion` que las altas: no
+   * existe ninguna raíz `AnulaFactuSistemaFacturacion`, que era lo que emitía la
+   * versión anterior.
    */
   private buildAnulacionSoapBody(
     cancellation: InvoiceCancellation & { hash: string },
     timestamp: Date,
     isFirst: boolean
   ): string {
-    const numSerieFactura = cancellation.invoiceId.series
-      ? `${cancellation.invoiceId.series}${cancellation.invoiceId.number}`
-      : cancellation.invoiceId.number;
-
-    let xml = `<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sum="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd">
-  <soapenv:Header/>
-  <soapenv:Body>
-    <sum:AnulaFactuSistemaFacturacion>
-      <sum:Cabecera>
-        <sum:ObligadoEmision>
-          <sum:NombreRazon>${cancellation.issuer.name}</sum:NombreRazon>
-          <sum:NIF>${cancellation.issuer.taxId.value}</sum:NIF>
-        </sum:ObligadoEmision>
-      </sum:Cabecera>
-      <sum:RegistroAnulacion>
-        <sum:IDFactura>
-          <sum:IDEmisorFactura>${cancellation.issuer.taxId.value}</sum:IDEmisorFactura>
-          <sum:NumSerieFactura>${numSerieFactura}</sum:NumSerieFactura>
-          <sum:FechaExpedicionFactura>${formatXmlDate(cancellation.invoiceId.issueDate)}</sum:FechaExpedicionFactura>
-        </sum:IDFactura>`;
-
-    // Add chain reference
-    if (isFirst) {
-      xml += `\n        <sum:Encadenamiento>
-          <sum:PrimerRegistro>S</sum:PrimerRegistro>
-        </sum:Encadenamiento>`;
-    } else if (cancellation.chainReference) {
-      const prevNum = cancellation.chainReference.previousSeries
-        ? `${cancellation.chainReference.previousSeries}${cancellation.chainReference.previousNumber}`
-        : cancellation.chainReference.previousNumber;
-      xml += `\n        <sum:Encadenamiento>
-          <sum:PrimerRegistro>N</sum:PrimerRegistro>
-          <sum:RegistroAnterior>
-            <sum:Huella>${cancellation.chainReference.previousHash}</sum:Huella>
-            <sum:FechaExpedicionFactura>${formatXmlDate(cancellation.chainReference.previousDate)}</sum:FechaExpedicionFactura>
-            <sum:NumSerieFactura>${prevNum}</sum:NumSerieFactura>
-          </sum:RegistroAnterior>
-        </sum:Encadenamiento>`;
-    }
-
-    // Add software info
-    xml += `\n        <sum:SistemaInformatico>
-          <sum:NombreRazon>${this.software.name}</sum:NombreRazon>
-          <sum:NIF>${this.software.developerTaxId}</sum:NIF>
-          <sum:NombreSistemaInformatico>${this.software.name}</sum:NombreSistemaInformatico>
-          <sum:IdSistemaInformatico>${this.software.installationNumber}</sum:IdSistemaInformatico>
-          <sum:Version>${this.software.version}</sum:Version>
-          <sum:NumeroInstalacion>${this.software.installationNumber}</sum:NumeroInstalacion>
-          <sum:TipoUsoPosibleSoloVerifactu>${this.software.systemType}</sum:TipoUsoPosibleSoloVerifactu>
-          <sum:TipoUsoPosibleMultiOT>N</sum:TipoUsoPosibleMultiOT>
-          <sum:IndicadorMultiplesOT>N</sum:IndicadorMultiplesOT>
-        </sum:SistemaInformatico>`;
-
-    // Add timestamp and hash
-    xml += `\n        <sum:FechaHoraHusoGenRegistro>${formatXmlDateTime(timestamp)}</sum:FechaHoraHusoGenRegistro>`;
-    xml += `\n        <sum:Huella>${cancellation.hash}</sum:Huella>`;
-
-    xml += `\n      </sum:RegistroAnulacion>
-    </sum:AnulaFactuSistemaFacturacion>
-  </soapenv:Body>
-</soapenv:Envelope>`;
-
-    return xml;
+    const previousHash = cancellation.chainReference?.previousHash ?? '';
+    const anulacion = mapCancellationToRegistroAnulacion(
+      cancellation,
+      this.software,
+      previousHash,
+      timestamp,
+      cancellation.hash,
+      { isFirstRecord: isFirst }
+    );
+    return wrapSoapEnvelope(
+      buildRegFactuSistemaFacturacion(mapCabecera(cancellation.issuer), [{ anulacion }])
+    );
   }
 
-  /**
-   * Build SOAP body for Consulta request
-   */
   private buildConsultaSoapBody(invoiceId: InvoiceId, issuerNif: string): string {
     const numSerieFactura = invoiceId.series
       ? `${invoiceId.series}${invoiceId.number}`
@@ -752,7 +612,7 @@ export class VerifactuClient {
         <sum:IDFactura>
           <sum:IDEmisorFactura>${issuerNif}</sum:IDEmisorFactura>
           <sum:NumSerieFactura>${numSerieFactura}</sum:NumSerieFactura>
-          <sum:FechaExpedicionFactura>${formatXmlDate(invoiceId.issueDate)}</sum:FechaExpedicionFactura>
+          <sum:FechaExpedicionFactura>${formatAeatDate(invoiceId.issueDate)}</sum:FechaExpedicionFactura>
         </sum:IDFactura>
       </sum:FiltroConsulta>
     </sum:ConsultaFactuSistemaFacturacion>

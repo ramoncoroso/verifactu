@@ -117,7 +117,11 @@ export interface SoftwareInfo {
   /** Installation number (unique per installation) */
   readonly installationNumber: string;
   /** System type indicator */
-  readonly systemType: 'V' | 'N';
+  /**
+   * `TipoUsoPosibleSoloVerifactu`: si el sistema **solo** puede usarse en modo
+   * Veri*Factu. El XSD lo declara `SiNoType`, así que `'V'` era un valor ilegal.
+   */
+  readonly systemType: 'S' | 'N';
 }
 
 /**
