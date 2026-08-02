@@ -150,3 +150,20 @@ export function calculateTaxTotals(breakdown: TaxBreakdown): TaxTotals {
     grandTotal: roundToTwoDecimals(totalTaxBase + totalVat + totalEquivalenceSurcharge),
   };
 }
+
+/**
+ * `CuotaTotal` del registro de facturación.
+ *
+ * **Incluye el recargo de equivalencia.** Lo confirma el código de error oficial
+ * 2006 de la AEAT: *«El campo CuotaTotal tiene un valor incorrecto para el valor
+ * de los campos CuotaRepercutida y CuotaRecargoEquivalencia suministrados»*.
+ *
+ * Es la única fuente del valor. Antes se calculaba en tres sitios con un `reduce`
+ * en línea que sumaba solo `vatAmount`, mientras el validador de negocio sí sumaba
+ * el recargo: tres puntos del código en desacuerdo sobre qué es el total, y uno de
+ * ellos alimentando la huella.
+ */
+export function calculateCuotaTotal(breakdown: TaxBreakdown): number {
+  const { totalVat, totalEquivalenceSurcharge } = calculateTaxTotals(breakdown);
+  return roundToTwoDecimals(totalVat + totalEquivalenceSurcharge);
+}

@@ -6,6 +6,7 @@
  */
 
 import { XmlBuildError } from '../errors/xml-errors.js';
+import { formatAeatAmount, formatAeatDate, formatAeatTimestamp } from '../format/aeat.js';
 
 /**
  * XML namespace definition
@@ -54,31 +55,35 @@ export function escapeXmlAttribute(value: string): string {
 }
 
 /**
- * Format a number for XML (with proper decimal handling)
+ * Importe para el XML.
+ *
+ * @deprecated Usa `formatAeatAmount` de `src/format/aeat.ts`. El parámetro
+ * `decimals` se ignora: `ImporteSgn12.2Type` admite como mucho dos decimales, así
+ * que permitir tres era emitir un valor que el XSD rechaza.
  */
-export function formatXmlNumber(value: number, decimals: number = 2): string {
-  return value.toFixed(decimals);
+export function formatXmlNumber(value: number, _decimals: number = 2): string {
+  return formatAeatAmount(value);
 }
 
 /**
- * Format a date for XML (ISO format: YYYY-MM-DD)
+ * Fecha para el XML, en `dd-mm-yyyy`.
+ *
+ * @deprecated Usa `formatAeatDate` de `src/format/aeat.ts`, que admite zona
+ * horaria explícita. Esta emitía formato ISO, que el XSD rechaza (VF-004a).
  */
 export function formatXmlDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return formatAeatDate(date);
 }
 
 /**
- * Format a datetime for XML (ISO format: YYYY-MM-DDTHH:mm:ss)
+ * Marca temporal para el XML, con designador de huso.
+ *
+ * @deprecated Usa `formatAeatTimestamp` de `src/format/aeat.ts`. Esta omitía el
+ * huso, de modo que el XML y la huella representaban el mismo instante de dos
+ * formas distintas y la AEAT no podía recalcular la huella (VF-004b).
  */
 export function formatXmlDateTime(date: Date): string {
-  const dateStr = formatXmlDate(date);
-  const hours = date.getHours().toString().padStart(2, '0');
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  const seconds = date.getSeconds().toString().padStart(2, '0');
-  return `${dateStr}T${hours}:${minutes}:${seconds}`;
+  return formatAeatTimestamp(date);
 }
 
 /**
