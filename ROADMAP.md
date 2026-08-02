@@ -6,7 +6,7 @@ Mejoras planificadas para futuras versiones de Verifactu.
 
 ## Prioridad actual: conformidad con la especificación de la AEAT
 
-Antes de cualquier mejora nueva hay que cerrar los 22 hallazgos de la auditoría, siete de ellos
+Antes de cualquier mejora nueva hay que cerrar los 37 hallazgos de la auditoría, once de ellos
 bloqueantes. El detalle y el orden de ataque recomendado están en
 [`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md).
 

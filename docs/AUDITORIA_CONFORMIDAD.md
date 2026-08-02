@@ -11,22 +11,35 @@
 | **Alcance** | `src/**` completo, configuración de build/CI/release, documentación |
 | **Estado del build** | `tsc --noEmit` ✅ · `eslint` 8 warnings · `npm audit` 0 vulnerabilidades · **691/691 tests ✅** |
 
-> ### ⚠️ Revisión de 2026-08-02
+> ### ⚠️ Este documento ha sido superado por las issues
 >
-> Un análisis posterior en profundidad, contrastado contra los XSD oficiales, el WSDL vigente y
-> los vectores de prueba publicados por la AEAT, ha **rectificado dos hallazgos** de este
-> documento y ha encontrado **nueve más**, cuatro de ellos bloqueantes.
+> Todos los hallazgos se sometieron el **2026-08-02** a una verificación adversarial: cada uno se
+> contrastó contra la fuente oficial descargada de nuevo, se comprobó línea a línea contra el
+> código, y se exigió una demostración ejecutable. **Once tenían afirmaciones falsas o
+> refutables**, y aparecieron **seis hallazgos más**.
 >
-> - **[VF-011](#vf-011) queda refutado.** La cadena *debe* avanzar aunque la AEAT rechace el
->   registro; revertirla sería una no conformidad. El bug real es el contrario y está en el
->   camino de reintento.
-> - **[VF-013](#vf-013) es correcto a medias.** El parámetro `huella` sobra, sí; pero la
->   codificación del espacio como `+` es la que prescribe la implementación de referencia de la
->   AEAT — la corrección que se proponía habría roto el comportamiento correcto.
+> **Cada hallazgo tiene ahora su issue con el enunciado corregido. Donde la issue y este documento
+> difieran, manda la issue.** Ver el [índice](#índice-de-issues) al final del resumen.
 >
-> El detalle de ambas rectificaciones, los nueve hallazgos nuevos y el plan de ejecución completo
-> están en **[`PLAN_CORRECCIONES.md`](PLAN_CORRECCIONES.md)**. Léelo antes de coger cualquier
-> hallazgo de este documento.
+> Rectificaciones principales:
+>
+> - **[VF-011](#vf-011) refutado.** La cadena *debe* avanzar aunque la AEAT rechace el registro;
+>   revertirla sería una no conformidad. Sustituido por **VF-011R** ([#21](https://github.com/ramoncoroso/verifactu/issues/21)).
+> - **[VF-013](#vf-013) correcto a medias.** El parámetro `huella` sobra, sí; pero la codificación
+>   del espacio como `+` es la que prescribe la implementación de referencia de la AEAT.
+> - **[VF-004](#vf-004): la justificación era falsa.** Un `FechaHoraHusoGenRegistro` sin huso
+>   **sí valida** contra el XSD. El fallo es de coherencia huella↔XML, no de esquema. Partido en
+>   VF-004a y VF-004b.
+> - **[VF-006](#vf-006) sub-afirmación (g): la corrección propuesta también era incorrecta.**
+>   `Cabecera` pertenece al namespace de **`SuministroLR`**, no al de `SuministroInformacion`.
+> - **[VF-016](#vf-016): `semantic-release` sí se ha ejecutado.** La rama `master` existe todavía
+>   y produjo el tag `v1.0.0` en enero.
+> - **[VF-020](#vf-020): el síntoma descrito era erróneo.** Un 403 con HTML **resuelve con éxito**;
+>   el fallo aflora como error de negocio inventado.
+> - **[VF-014](#vf-014): la Orden EHA/451/2008 no contiene la tabla de controles** que este
+>   documento le atribuye. Lo firme es que `K`/`L`/`M` no son CIF (RD 1065/2007).
+>
+> El plan de ejecución completo está en **[`PLAN_CORRECCIONES.md`](PLAN_CORRECCIONES.md)**.
 
 ---
 
@@ -71,11 +84,77 @@ cadena `<svg`, y nunca que el código resultante sea legible por un escáner.
 | [VF-020](#vf-020) | 🟢 Baja | Red | El cliente SOAP ignora el código de estado HTTP |
 | [VF-021](#vf-021) | 🟢 Baja | Red | Sin soporte de compresión gzip |
 | [VF-022](#vf-022) | 🟢 Baja | Docs | Badge de Codecov apuntando a la rama `master` |
-| **VF-023 … VF-031** | 🔴🟠🟡 | varias | **Nueve hallazgos añadidos en la revisión.** Cuatro bloqueantes: el parseo de respuestas busca elementos inexistentes (toda respuesta real lanza `AeatError`); los enums no coinciden con el XSD; `PrimerRegistro` solo admite `S`; sin envío por lotes el control de flujo limita a 1 factura/minuto. Detalle en [`PLAN_CORRECCIONES.md` §3](PLAN_CORRECCIONES.md#3-hallazgos-nuevos) |
+| VF-023 | 🔴 Bloqueante | Red | `parseAltaResponse` busca elementos inexistentes: toda respuesta real lanza `AeatError` aunque el registro fuera aceptado |
+| VF-024 | 🔴 Bloqueante | Modelo | Los enumerados no coinciden con el XSD; `systemType: 'V'` es un valor ilegal |
+| VF-025 | 🔴 Bloqueante | XML | `PrimerRegistro` solo admite `S` y es excluyente con `RegistroAnterior` |
+| VF-026 | 🟠 Alta | Red | Sin envío por lotes, el control de flujo degradará el caudal a 1 factura cada *t* segundos |
+| VF-027 | 🟠 Alta | XML | El parser ignora comentarios, CDATA y `DOCTYPE`, y descarta elementos en silencio |
+| VF-028 | 🟡 Media | Fechas | Las fechas de calendario dependen de la zona horaria del proceso |
+| VF-029 | 🟡 Media | Red | El backoff exponencial nunca se aplica; los faults `soapenv:Server` no se reintentan |
+| VF-030 | 🟡 Media | Red | `ConcurrencyLimiter` sobresuscribe |
+| VF-031 | 🟡 Media | Empaquetado | No existe fichero `LICENSE`; `.gitignore` excluiría los fixtures de certificado |
 
 **Severidades.** 🔴 Bloqueante: impide que un envío sea aceptado por la AEAT. 🟠 Alta: produce
 rechazos, pérdida de datos o corrupción de la cadena en casos reales. 🟡 Media: fallos
 concretos o deuda que bloquea la evolución. 🟢 Baja: robustez y pulido.
+
+### Índice de issues
+
+Cada issue lleva el enunciado **verificado y corregido**, con la fuente oficial citada, la
+demostración ejecutable y el criterio de aceptación. **Es la referencia autorizada.**
+
+| Hallazgo | Issue | Hallazgo | Issue | Hallazgo | Issue |
+|---|---|---|---|---|---|
+| VF-001 | [#10](https://github.com/ramoncoroso/verifactu/issues/10) | VF-013 | [#23](https://github.com/ramoncoroso/verifactu/issues/23) | VF-025 | [#35](https://github.com/ramoncoroso/verifactu/issues/35) |
+| VF-002 | [#11](https://github.com/ramoncoroso/verifactu/issues/11) | VF-014 | [#24](https://github.com/ramoncoroso/verifactu/issues/24) | VF-026 | [#36](https://github.com/ramoncoroso/verifactu/issues/36) |
+| VF-003 | [#12](https://github.com/ramoncoroso/verifactu/issues/12) | VF-015 | [#25](https://github.com/ramoncoroso/verifactu/issues/25) | VF-027 | [#37](https://github.com/ramoncoroso/verifactu/issues/37) |
+| VF-004a | [#13](https://github.com/ramoncoroso/verifactu/issues/13) | VF-016 | [#26](https://github.com/ramoncoroso/verifactu/issues/26) | VF-028 | [#38](https://github.com/ramoncoroso/verifactu/issues/38) |
+| VF-004b | [#14](https://github.com/ramoncoroso/verifactu/issues/14) | VF-017 | [#27](https://github.com/ramoncoroso/verifactu/issues/27) | VF-029 | [#39](https://github.com/ramoncoroso/verifactu/issues/39) |
+| VF-005 | [#15](https://github.com/ramoncoroso/verifactu/issues/15) | VF-018 | [#28](https://github.com/ramoncoroso/verifactu/issues/28) | VF-030 | [#40](https://github.com/ramoncoroso/verifactu/issues/40) |
+| VF-006 | [#16](https://github.com/ramoncoroso/verifactu/issues/16) | VF-019 | [#29](https://github.com/ramoncoroso/verifactu/issues/29) | VF-031 | [#41](https://github.com/ramoncoroso/verifactu/issues/41) |
+| VF-007 | [#17](https://github.com/ramoncoroso/verifactu/issues/17) | VF-020 | [#30](https://github.com/ramoncoroso/verifactu/issues/30) | VF-032 | [#42](https://github.com/ramoncoroso/verifactu/issues/42) |
+| VF-008 | [#18](https://github.com/ramoncoroso/verifactu/issues/18) | VF-021 | [#31](https://github.com/ramoncoroso/verifactu/issues/31) | VF-033 | [#43](https://github.com/ramoncoroso/verifactu/issues/43) |
+| VF-009 | [#19](https://github.com/ramoncoroso/verifactu/issues/19) | VF-022 | [#32](https://github.com/ramoncoroso/verifactu/issues/32) | VF-034 | [#44](https://github.com/ramoncoroso/verifactu/issues/44) |
+| VF-010 | [#20](https://github.com/ramoncoroso/verifactu/issues/20) | VF-023 | [#33](https://github.com/ramoncoroso/verifactu/issues/33) | VF-035 | [#45](https://github.com/ramoncoroso/verifactu/issues/45) |
+| VF-011R | [#21](https://github.com/ramoncoroso/verifactu/issues/21) | VF-024 | [#34](https://github.com/ramoncoroso/verifactu/issues/34) | VF-036 | [#46](https://github.com/ramoncoroso/verifactu/issues/46) |
+| VF-012 | [#22](https://github.com/ramoncoroso/verifactu/issues/22) | | | | |
+
+### Hallazgos añadidos en la verificación
+
+| ID | Sev. | Hallazgo |
+|----|------|----------|
+| VF-032 | 🟠 Alta | El job «Security Audit» del CI falla, y ya se «arregló» una vez bajando el umbral |
+| VF-033 | 🔴 Bloqueante | `BaseImponibleOImporteNoSujeto` con `I` mayúscula; el XSD declara `Oimporte`. **Ninguna factura valida** |
+| VF-034 | 🔴 Bloqueante | `DescripcionOperacion` es obligatorio en el XSD y solo se emite si la factura trae descripción |
+| VF-035 | 🟡 Media | `ClaveRegimen` hardcodeado a `01`; `invoice.operationRegimes` no se usa jamás |
+| VF-036 | 🟠 Alta | El nombre `verifactu` ya está ocupado en npm por un tercero: el paquete no se puede publicar |
+
+### Rectificaciones detalladas
+
+Además de las siete listadas en la cabecera, la verificación corrigió:
+
+- **VF-002** — la cita entrecomillada de este documento **no aparece en el PDF**. El literal del apartado 5 es: *«El formato de salida será: — En sistema hexadecimal. — En mayúsculas. El tamaño será de 64 caracteres alfanuméricos.»*
+- **VF-003** — la justificación se apoyaba en el XSD, que nombra *elementos XML*, no campos de una cadena a hashear. La autoridad directa es el **apartado 3.b del PDF de la huella**, que los enumera literalmente.
+- **VF-007** — la variante `VerifactuSelloSOAP` **no existe**. El acceso con certificado de sello usa la misma ruta en los hosts `www10`/`prewww10`. Y la `SOAPAction` correcta es la **cadena vacía**, no un nombre de operación.
+- **VF-008** — «ningún fichero fuera de `src/xml/templates/` importa de ese directorio» es falso: `src/xml/index.ts:7-9` sí importa. Lo correcto es «ningún módulo *de producción*».
+- **VF-009** — la nota «la ruta de `templates/` sí los contempla» induce a consolidar sobre un código que emite `CalificacionOperacion=E`/`N` y `OperacionNoSujeta`, valores y elementos **inexistentes** en el XSD.
+- **VF-010** — el `Desglose` sin recargo **valida** contra el XSD; la regresión no la caza un test de esquema. Y es bloqueante también para la **huella**, no solo para el XML.
+- **VF-017** — la provenance **no está configurada**, así que su fallo es hipotético.
+- **VF-019** — `mac verify failure` es **exclusivamente contraseña incorrecta**; el heredado con contraseña correcta da `ERR_CRYPTO_UNSUPPORTED_OPERATION`. Y la línea citada (`certificate.ts:158-172`) no parsea el PKCS#12: el error surge en `validateCertificate:262`.
+- **VF-022** — las líneas citadas son las de `main`; en esta rama son `:21` y `:19`.
+- **VF-024** — el código **no declara** un `ClaveRegimen 16`; los sobrantes son solo `12` y `13`.
+- **VF-026** — «limita a 1 factura cada 60 segundos» es una proyección, no una medición: hoy no hay control de flujo alguno, y la norma solo fija 60 s como valor **inicial**.
+- **VF-029** — `TimeoutError` usa 5000 ms, no 1000; y `calculateBackoffDelay` sí se ejecuta para errores ajenos a la jerarquía `NetworkError`.
+- **VF-030** — es un defecto de corrección reproducible en laboratorio, no un incidente observado en producción.
+
+Las referencias de este documento citaban copias de terceros en GitHub y artículos de blog. Las
+fuentes primarias —el PDF de la huella, el de QR y los XSD/WSDL en `tikeV1.0` del dominio de la
+AEAT— están en [`PLAN_CORRECCIONES.md` §10](PLAN_CORRECCIONES.md#10-fuentes) y en cada issue.
+
+> **Nota operativa:** descargar las fuentes oficiales de la AEAT falla con `curl` por defecto en
+> sistemas con OpenSSL 3 (*CA signature digest algorithm too weak*). Hay que forzar
+> `--ciphers 'DEFAULT@SECLEVEL=0'`. El `scripts/fetch-schemas.mjs` que propone el plan debe
+> contemplarlo.
 
 ### Orden de ataque sugerido
 

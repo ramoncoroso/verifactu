@@ -11,6 +11,46 @@
 | **Esfuerzo estimado** | ≈ 220 h netas |
 | **Consecuencia de versión** | Los cambios obligan a un `2.0.0`; ver [§7](#7-decisiones-abiertas) |
 
+> ### ⚠️ Verificado el 2026-08-02 — las issues mandan sobre este documento
+>
+> Todos los hallazgos se sometieron a verificación adversarial: fuente oficial redescargada, código
+> comprobado línea a línea y demostración ejecutable exigida. Ninguno se cayó del todo, pero **once
+> tenían afirmaciones falsas o refutables** y aparecieron **seis hallazgos más** (VF-032 … VF-036,
+> incluido uno bloqueante que invalida cualquier factura por una errata de mayúscula).
+>
+> Cada hallazgo tiene su **[issue](https://github.com/ramoncoroso/verifactu/issues) con el enunciado
+> corregido**, la fuente citada, la demostración y el criterio de aceptación. Donde una issue y este
+> documento difieran, manda la issue. Índice en
+> [`AUDITORIA_CONFORMIDAD.md`](AUDITORIA_CONFORMIDAD.md#índice-de-issues).
+>
+> Correcciones que afectan a este documento en particular:
+>
+> - **§2.1** — «el QR impreso lleva uno de los dos [huellas]» es incorrecto y se contradice con §2.2:
+>   la huella **no** es uno de los 4 parámetros del QR. Y la divergencia de huellas en el reintento
+>   requiere que este cruce una frontera de segundo (el timestamp tiene resolución de un segundo);
+>   ocurre casi siempre porque el retardo por defecto es de 1000 ms, pero hay que declararlo.
+> - **§2.2** — el fragmento Java de la AEAT está **incrustado como imagen** en la página 9 del PDF;
+>   `pdftotext` no lo extrae y hay que recuperarlo con `pdfimages -f 9 -l 9 -png`. La transcripción se
+>   verificó por OCR y ejecutando el código en OpenJDK 21. Además la norma dice «únicamente los
+>   siguientes **4 parámetros obligatorios**»: el §7 define dos opcionales más (`idioma`, `formato`).
+> - **§3, VF-024** — el código **no** declara un `ClaveRegimen 16`; los sobrantes son solo `12` y `13`.
+> - **§3, VF-026** — «limita a 1 factura cada 60 segundos» es una **proyección**, no una medición: hoy
+>   no hay control de flujo alguno, y la norma solo fija 60 s como valor *inicial*.
+> - **§3, VF-029** — `TimeoutError` usa 5000 ms, no 1000; y `calculateBackoffDelay` sí se ejecuta para
+>   errores ajenos a la jerarquía `NetworkError`.
+> - **§3** — el discriminante para elegir entre `ValidarQR` y `ValidarQRNoVerifactu` **no** puede ser
+>   `SoftwareInfo.systemType`: ese campo alimenta `TipoUsoPosibleSoloVerifactu` (si el software *solo*
+>   puede usarse en modo Veri\\*Factu), que es otra cosa, y además sus valores `'V'|'N'` son ilegales.
+>   Hace falta un discriminante nuevo.
+> - **§4.4 / §6, capa 2** — la herramienta recomendada es **`libxml2-wasm`** (2,4 ms por documento).
+>   `xmllint-wasm`, que se mencionó al principio, no permite reutilizar el esquema compilado y es
+>   460× más lento por documento.
+> - **§0.9** — las cifras «7 falsos negativos y 9 falsos positivos sobre 42 vectores» **no son
+>   reproducibles**: los 42 vectores no se publicaron. Una batería independiente de 62 da 8 y 9, y
+>   solo 11 de esos 17 resisten el contraste con dos implementaciones de referencia.
+> - **§0.10** — «los 17 tests engañosos»: en `nif-validator.test.ts` solo **4** fijan explícitamente
+>   comportamiento contrario a la corrección propuesta. Falta el desglose por fichero.
+
 ---
 
 ## 1. La restricción que gobierna este plan
