@@ -369,9 +369,21 @@ oráculo escrito y esperando»: hay que reescribirlos dentro de la propia fase.
 | **2** | Desarmar el release: `RELEASE_ENABLED` y `npmPublish: false`, e invertir la instrucción del `ROADMAP.md` | ~1 | ✅ #71 |
 | **3** | Demoler `xml/templates/` y los tests anti-norma | ~8 | ✅ #73 |
 | **4** | Formato unificado y huella conforme, **con VF-007 dentro** | ~21 | ✅ #72, #74 |
-| **5** | **El XML conforme** — árbol que escapa siempre, tabla de orden derivada del XSD, uniones discriminadas para los `choice` | ~45 | ⬜ siguiente |
-| **6** | **El parseo de respuestas** — el oráculo ya está escrito | ~7 | ⬜ |
-| **7** | **El QR** — independiente, paralelizable desde hoy | ~18 | ⬜ |
+| **5** | **El XML conforme** — árbol que escapa siempre, tabla de orden derivada del XSD, uniones discriminadas para los `choice` | ~45 | ✅ #77 |
+| **6** | **El parseo de respuestas** | ~7 | ✅ #78 |
+| **7** | **El QR** | ~18 | ✅ #76 |
+
+**Los once bloqueantes están cerrados y no queda ningún `it.fails`.** Lo que sigue
+ya no es conformidad de formato: es la parte de diseño con estado, más lo que solo
+se puede cerrar contra el servicio real.
+
+| # | Trabajo | Cierra | Notas |
+|---|---|---|---|
+| **8** | **Cadena append-only y reenvío de bytes** | #21 | ~20 h. `RecordChain.append()`, sin `revert()` en la API pública, y reintento que reenvía los bytes almacenados en vez de regenerar el registro |
+| **9** | **Control de flujo y envío por lotes** | #22, #36 | ~14 h. `SubmissionPacer` persistente y `BatchQueue` hasta 1000 registros. **Los datos ya llegan parseados** desde #78 |
+| **10** | **Endurecer transporte y parser** | #30, #37, #39, #40 | ~14 h. Comprobar el estado HTTP, comentarios y CDATA en el parser, backoff real, sobresuscripción del limitador |
+| **11** | **Puerta de calidad** | #28, #68 | ~8 h. `typecheck:tests` y `lint:all` al CI, ya sobre ficheros definitivos |
+| **12** | **Preproducción** | — | Requiere certificado. Es lo único que confirma que la AEAT acepta un registro |
 
 Lo que quedó fuera de los puntos 1-4, y por qué:
 

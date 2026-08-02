@@ -98,3 +98,26 @@ ${body}
   </env:Body>
 </env:Envelope>`;
 }
+
+const NS_C =
+  'https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/RespuestaConsultaLR.xsd';
+
+/** Genera una respuesta de consulta conforme a `RespuestaConsultaLR.xsd`. */
+export function buildRespuestaConsulta(
+  input: { readonly estadoRegistro?: string; readonly timestamp?: string } = {}
+): string {
+  const { estadoRegistro = 'Correcto', timestamp = '2026-08-02T12:00:00+02:00' } = input;
+  return `<sfLRRC:RespuestaConsultaFactuSistemaFacturacion xmlns:sfLRRC="${NS_C}" xmlns:sf="${NS_SF}">
+  <sfLRRC:RegistroRespuestaConsultaFactuSistemaFacturacion>
+    <sfLRRC:IDFactura>
+      <sf:IDEmisorFactura>B12345678</sf:IDEmisorFactura>
+      <sf:NumSerieFactura>FC0001</sf:NumSerieFactura>
+      <sf:FechaExpedicionFactura>02-08-2026</sf:FechaExpedicionFactura>
+    </sfLRRC:IDFactura>
+    <sfLRRC:EstadoRegistro>
+      <sfLRRC:TimestampUltimaModificacion>${timestamp}</sfLRRC:TimestampUltimaModificacion>
+      <sfLRRC:EstadoRegistro>${estadoRegistro}</sfLRRC:EstadoRegistro>
+    </sfLRRC:EstadoRegistro>
+  </sfLRRC:RegistroRespuestaConsultaFactuSistemaFacturacion>
+</sfLRRC:RespuestaConsultaFactuSistemaFacturacion>`;
+}

@@ -9,6 +9,8 @@
  *
  * Cada respuesta se valida primero contra `RespuestaSuministro.xsd` y solo
  * después se le pasa al parser, para que el fixture no pueda derivar.
+ *
+ * Los `it.fails` que documentaban VF-023 se retiraron al corregirlo.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -67,58 +69,97 @@ describe('El fixture de respuesta es conforme', () => {
     expect(result.valid, formatXsdErrors(result)).toBe(true);
   });
 
-  it('el estado «Rechazado» que declara el tipo del cliente no existe en el XSD', () => {
-    // `SubmitInvoiceResponse.state` declara 'Rechazado'; el enumerado real es
-    // Correcto | AceptadoConErrores | Incorrecto. Ver issue #33.
-    const xml = buildRespuestaSuministro({
-      lineas: [{ estadoRegistro: 'Incorrecto' }],
-    }).replace('<sfR:EstadoRegistro>Incorrecto<', '<sfR:EstadoRegistro>Rechazado<');
-    expect(validateRespuestaSuministro(xml).valid).toBe(false);
-  });
 });
 
-describe('parseAltaResponse contra una respuesta real · VF-023', () => {
-  // VF-023: busca `RespuestaRegFactura`, que no existe.
-  it.fails('no lanza ante una respuesta aceptada [VF-023 abierto]', () => {
+describe('parseAltaResponse contra una respuesta real', () => {
+  it('no lanza ante una respuesta aceptada', () => {
     expect(() => parseAlta(buildRespuestaSuministro())).not.toThrow();
   });
 
-  it.fails('lee el estado de la respuesta [VF-023 abierto]', () => {
-    const r = parseAlta(buildRespuestaSuministro()) as { state: string };
+  it('lee el estado, el CSV y el sello temporal', () => {
+    const r = parseAlta(buildRespuestaSuministro()) as {
+      accepted: boolean;
+      state: string;
+      csv?: string;
+      timestampPresentacion?: Date;
+    };
+    expect(r.accepted).toBe(true);
     expect(r.state).toBe('Correcto');
-  });
-
-  it.fails('lee el CSV del envío [VF-023 abierto]', () => {
-    const r = parseAlta(buildRespuestaSuministro()) as { csv?: string };
     expect(r.csv).toBe('A-B4CD5EF6GH7IJ8K');
+    expect(r.timestampPresentacion?.toISOString()).toBe('2026-08-02T12:00:00.000Z');
   });
 
-  // VF-012: TiempoEsperaEnvio y EstadoEnvio son obligatorios en toda respuesta y
-  // gobiernan el control de flujo. Hoy no se leen — `grep` sobre src/ no los
-  // encuentra. Sin ellos no se puede implementar el pacer ni el envío por lotes.
-  it.fails('expone TiempoEsperaEnvio [VF-012 abierto]', () => {
-    const r = parseAlta(buildRespuestaSuministro({ tiempoEsperaEnvio: '120' })) as Record<
+  // Art. 16.2: la AEAT devuelve el tiempo de espera «que deberá ser tenido en
+  // cuenta para el siguiente envío». Sin leerlo no se puede implementar el
+  // control de flujo (#22).
+  it('expone TiempoEsperaEnvio y EstadoEnvio', () => {
+    const r = parseAlta(
+      buildRespuestaSuministro({ tiempoEsperaEnvio: '120', estadoEnvio: 'Correcto' })
+    ) as Record<string, unknown>;
+    expect(r['tiempoEsperaEnvioSeconds']).toBe(120);
+    expect(r['estadoEnvio']).toBe('Correcto');
+  });
+
+  it('si TiempoEsperaEnvio viene vacío, usa los 60 segundos de la norma', () => {
+    const r = parseAlta(buildRespuestaSuministro({ tiempoEsperaEnvio: '' })) as Record<
       string,
       unknown
     >;
-    expect(r).toHaveProperty('tiempoEsperaEnvioSeconds', 120);
+    expect(r['tiempoEsperaEnvioSeconds']).toBe(60);
   });
 
-  it.fails('expone EstadoEnvio [VF-012 abierto]', () => {
+  it('un registro aceptado con errores cuenta como aceptado, y expone el código', () => {
+    const r = parseAlta(
+      buildRespuestaSuministro({
+        estadoEnvio: 'ParcialmenteCorrecto',
+        lineas: [
+          {
+            estadoRegistro: 'AceptadoConErrores',
+            codigoError: 2000,
+            descripcionError: 'El cálculo de la huella suministrada es incorrecta.',
+          },
+        ],
+      })
+    ) as { accepted: boolean; state: string; errorCode?: string; errorDescription?: string };
+    // «AceptadoConErrores» SÍ se registra: tiene errores que no provocan rechazo.
+    expect(r.accepted).toBe(true);
+    expect(r.state).toBe('AceptadoConErrores');
+    expect(r.errorCode).toBe('2000');
+    expect(r.errorDescription).toContain('huella');
+  });
+
+  it('un registro rechazado no cuenta como aceptado', () => {
+    const r = parseAlta(
+      buildRespuestaSuministro({
+        estadoEnvio: 'Incorrecto',
+        lineas: [{ estadoRegistro: 'Incorrecto', codigoError: 1103 }],
+      })
+    ) as { accepted: boolean; state: string };
+    expect(r.accepted).toBe(false);
+    // «Incorrecto», no «Rechazado»: ese valor no existe en el enumerado.
+    expect(r.state).toBe('Incorrecto');
+  });
+});
+
+describe('Semántica que no es obvia', () => {
+  // Trampa de la lista L18: «ParcialmenteCorrecto» no implica que haya registros
+  // rechazados; basta uno «AceptadoConErrores». EstadoEnvio no sirve para decidir
+  // nada por registro.
+  it('ParcialmenteCorrecto no implica rechazo', () => {
     const r = parseAlta(
       buildRespuestaSuministro({
         estadoEnvio: 'ParcialmenteCorrecto',
         lineas: [{ estadoRegistro: 'AceptadoConErrores', codigoError: 2000 }],
       })
-    ) as Record<string, unknown>;
-    expect(r).toHaveProperty('estadoEnvio', 'ParcialmenteCorrecto');
+    ) as { accepted: boolean; estadoEnvio: string };
+    expect(r.estadoEnvio).toBe('ParcialmenteCorrecto');
+    expect(r.accepted).toBe(true);
   });
 
-  // Documenta el estado actual de forma afirmativa: qué error concreto emerge.
-  // Al corregir VF-023 hay que borrar este test, no actualizarlo.
-  it('hoy lanza AeatError incluso con el registro aceptado [VF-023 abierto]', () => {
-    expect(() => parseAlta(buildRespuestaSuministro())).toThrowError(
-      /missing RespuestaRegFactura/
-    );
+  it('el estado «Rechazado» no existe en el enumerado del XSD', () => {
+    const xml = buildRespuestaSuministro({
+      lineas: [{ estadoRegistro: 'Incorrecto' }],
+    }).replace('<sfR:EstadoRegistro>Incorrecto<', '<sfR:EstadoRegistro>Rechazado<');
+    expect(validateRespuestaSuministro(xml).valid).toBe(false);
   });
 });
