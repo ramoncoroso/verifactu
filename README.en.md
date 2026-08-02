@@ -1,19 +1,10 @@
 # Verifactu
 
-TypeScript library for integrating with the **Spanish Tax Agency (AEAT) Verifactu** invoice verification system.
+TypeScript library for the Spanish Tax Agency's **Veri\*Factu** system. It builds the invoicing
+record, the chained hash, the XML and the QR code, and submits it over SOAP with a client
+certificate.
 
-> ### ⚠️ Status: work in progress — not production-ready yet
->
-> An audit against the AEAT specification found that the QR code generator, the hash (*huella*)
-> calculation and the XML structure are **not compliant** in their current state, so a submission
-> would not be accepted by the AEAT. The architecture, models, validation and client layer are in
-> good shape.
->
-> The full write-up — 37 findings with file, line, what the spec requires and how to fix it — is in
-> **[`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md)**, and the five-phase
-> remediation plan, including the AEAT's official test vectors and the verification strategy, in
-> **[`docs/PLAN_CORRECCIONES.md`](docs/PLAN_CORRECCIONES.md)**. Both in Spanish.
-> Contributions welcome.
+**[Léeme en castellano](README.md)**
 
 [![CI](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml/badge.svg)](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/ramoncoroso/verifactu/branch/main/graph/badge.svg)](https://codecov.io/gh/ramoncoroso/verifactu)
@@ -22,18 +13,54 @@ TypeScript library for integrating with the **Spanish Tax Agency (AEAT) Verifact
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-1%20(0%20transitive)-brightgreen.svg)]()
 
-**[Leer en Español](README.md)**
+> ### Status
+>
+> The **eleven blocking defects** found by the conformance audit are fixed and verified against
+> official AEAT sources. Validation against the **real pre-production environment** is still
+> pending — it requires a valid electronic certificate — so treat this as a *release candidate*:
+> ready to integrate and test, awaiting one last field check.
+>
+> Full history in [`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md) (Spanish).
 
-## Features
+---
 
-- **Minimal dependency surface**: a single runtime dependency (`qrcode-generator`, MIT, no transitive deps), required by the ISO/IEC 18004 standard that art. 21 of Order HAC/1177/2024 mandates. Everything else uses native Node.js APIs
-- **Type-safe** with TypeScript strict mode
-- **Dual build**: ESM and CommonJS
-- **Integrity chain**: each record contains the hash of the previous one (blockchain-like)
-- **Complete validation**: NIF/CIF/NIE, schemas, AEAT business rules
-- **Standards-compliant QR**: ISO/IEC 18004:2015, level M, SVG output sizeable in millimetres
-- **Sandbox and production support**: both AEAT environments
-- **Fluent API**: Builder pattern for intuitive invoice construction
+## Contents
+
+- [Why this library](#why-this-library)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Invoices](#invoices)
+  - [Simple invoice](#simple-invoice) · [Multiple VAT rates](#multiple-vat-rates) ·
+    [Equivalence surcharge](#equivalence-surcharge) · [Exempt and non-subject](#exempt-and-non-subject) ·
+    [Corrective invoices](#corrective-invoices) · [Simplified](#simplified-invoice-f2)
+- [Special regimes](#special-regimes)
+- [Submitting](#submitting)
+  - [Flow control](#flow-control-article-162) · [Batch submission](#batch-submission) ·
+    [Cancellation](#cancellation) · [Status query](#status-query)
+- [The record chain](#the-record-chain)
+- [QR code](#qr-code)
+- [Errors](#errors)
+- [Certificates](#certificates)
+- [Validation](#validation)
+- [Client options](#client-options)
+- [Conformance](#conformance-what-is-verified-and-against-what)
+- [Development](#development)
+
+---
+
+## Why this library
+
+**One runtime dependency.** `qrcode-generator` (MIT, zero transitive), and only because article 21
+of Order HAC/1177/2024 mandates an ISO/IEC 18004-conformant QR code. Everything else — SHA-256,
+mutual TLS, SOAP, XML — uses native Node APIs.
+
+**It is verified against external sources, not against itself.** The AEAT's XSDs, WSDL and error
+catalogue are vendored under `schemas/` and frozen by sha256; the tests validate the generated XML
+against them, reproduce the published hash vectors, and **decode** the generated QR with an
+independent reader. See [Conformance](#conformance-what-is-verified-and-against-what).
+
+**It implements the article 16.2 flow control**, which the Order words as *shall implement*, not as
+a recommendation.
 
 ## Installation
 
@@ -41,634 +68,531 @@ TypeScript library for integrating with the **Spanish Tax Agency (AEAT) Verifact
 npm install verifactu
 ```
 
-## Quick Start
+> The `verifactu` name is taken on npm by a third party. Until that is resolved
+> ([#46](https://github.com/ramoncoroso/verifactu/issues/46)), install from the repository:
+> `npm install github:ramoncoroso/verifactu`.
+
+Requires **Node.js ≥ 18**. Ships both ESM and CommonJS.
+
+## Quick start
 
 ```typescript
 import { VerifactuClient, InvoiceBuilder } from 'verifactu';
 
-// 1. Create client (use environment variables for credentials)
 const client = new VerifactuClient({
-  environment: 'sandbox', // or 'production'
-  certificate: {
-    type: 'pfx',
-    path: process.env.CERT_PATH!,
-    password: process.env.CERT_PASSWORD!,
-  },
+  environment: 'sandbox',
+  certificate: { type: 'pfx', path: process.env.CERT_PATH!, password: process.env.CERT_PASSWORD! },
   software: {
-    name: 'My Application',
-    developerTaxId: process.env.DEVELOPER_TAX_ID!,
+    name: 'My ERP',
+    developerTaxId: 'B12345678',
     version: '1.0.0',
     installationNumber: '001',
-    systemType: 'V',
+    systemType: 'S', // 'S' if the system can only operate in Veri*Factu mode
   },
 });
 
-// 2. Build invoice
 const invoice = InvoiceBuilder.create()
   .issuer('B12345678', 'My Company SL')
   .recipient('A87654321', 'Client SA')
-  .type('F1') // Standard invoice
-  .id('A', '001', new Date())
-  .addVatBreakdown(1000, 21) // 1000 EUR base + 21% VAT
+  .id('FC', '0001', new Date())
+  .description('Consulting services')
+  .addVatBreakdown(1000, 21)
   .build();
 
-// 3. Submit to AEAT
-const response = await client.submitInvoice(invoice);
-
-console.log(response);
-// {
-//   accepted: true,
-//   state: 'Correcto',
-//   csv: 'ABC123...',
-//   invoice: { ...invoice, hash: '...' }
-// }
+const r = await client.submitInvoice(invoice);
+console.log(r.accepted, r.csv, r.invoice.hash);
 ```
 
-## API
+---
 
-### VerifactuClient
+## Invoices
 
-Main client for communicating with AEAT services.
+### Simple invoice
 
 ```typescript
-const client = new VerifactuClient(config);
+const invoice = InvoiceBuilder.create()
+  .issuer('B12345678', 'My Company SL')
+  .recipient('A87654321', 'Client SA')
+  .type('F1')
+  .id('FC', '0001', new Date('2026-03-15'))
+  .description('Annual maintenance')
+  .addVatBreakdown(1000, 21) // base 1000 → VAT 210, total 1210
+  .build();
 ```
 
-#### Configuration
+`addVatBreakdown(base, rate)` computes the VAT amount and the total. To supply them yourself, build
+the `Invoice` object directly — every field is public and `readonly`.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `environment` | `'sandbox' \| 'production'` | AEAT environment |
-| `certificate` | `CertificateConfig` | Certificate configuration |
-| `software` | `SoftwareInfo` | Software information |
-| `timeout?` | `number` | Timeout in ms (default: 30000) |
-| `chainState?` | `ChainState` | Initial chain state |
-| `retry?` | `RetryOptions` | Retry configuration |
-| `maxConcurrency?` | `number` | Maximum concurrent requests (default: unlimited) |
-| `queueTimeout?` | `number` | Queue wait timeout in ms (default: 30000) |
-| `logger?` | `Logger` | Logger for debugging (default: noop) |
+### Multiple VAT rates
 
-#### Methods
-
-##### `submitInvoice(invoice: Invoice): Promise<SubmitInvoiceResponse>`
-
-Registers an invoice with AEAT.
+An invoice may carry as many breakdown lines as needed, up to twelve.
 
 ```typescript
-const response = await client.submitInvoice(invoice);
+const invoice = InvoiceBuilder.create()
+  .issuer('B12345678', 'My Company SL')
+  .recipient('A87654321', 'Client SA')
+  .id('FC', '0002', new Date())
+  .description('Assorted supplies')
+  .addVatBreakdown(1000, 21) // standard
+  .addVatBreakdown(500, 10)  // reduced
+  .addVatBreakdown(200, 4)   // super-reduced
+  .build();
+// ImporteTotal = 1910.00 · CuotaTotal = 280.00
+```
 
-if (response.accepted) {
-  console.log('CSV:', response.csv);
-  console.log('Hash:', response.invoice.hash);
-} else {
-  console.error('Error:', response.errorCode, response.errorDescription);
+### Equivalence surcharge
+
+It belongs to the same line as its VAT and **counts towards `CuotaTotal`**; leaving it out makes the
+AEAT reject the record with error 2006.
+
+```typescript
+const invoice: Invoice = {
+  operationType: 'A',
+  invoiceType: 'F1',
+  issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name: 'Wholesaler SL' },
+  recipients: [{ taxId: { type: 'NIF', value: '12345678Z' }, name: 'Retailer' }],
+  id: { series: 'FC', number: '0003', issueDate: new Date() },
+  description: 'Sale to a retailer under the surcharge regime',
+  operationRegimes: ['01'],
+  taxBreakdown: {
+    vatBreakdowns: [
+      {
+        taxBase: 1000,
+        vatRate: 21,
+        vatAmount: 210,
+        equivalenceSurchargeRate: 5.2,
+        equivalenceSurchargeAmount: 52,
+      },
+    ],
+  },
+  totalAmount: 1262,
+};
+```
+
+### Exempt and non-subject
+
+They are separate blocks and both reach the XML. Non-subjection has **no element of its own**: it is
+expressed through `CalificacionOperacion` `N1` (articles 7, 14 and others) or `N2` (place-of-supply
+rules).
+
+```typescript
+const invoice = InvoiceBuilder.create()
+  .issuer('B12345678', 'Exporter SL')
+  .recipient('A87654321', 'Client SA')
+  .id('FC', '0004', new Date())
+  .description('Export and disbursements')
+  .addVatBreakdown(1000, 21)
+  .addExemptBreakdown(500, 'E2')     // intra-EU supply
+  .addNonSubjectBreakdown(120, 'N1') // disbursements
+  .build();
+```
+
+Exemption causes: `E1` (art. 20) · `E2` (art. 21) · `E3` (art. 22) · `E4` (arts. 23 and 24) ·
+`E5` (art. 25) · `E6` (other).
+
+### Corrective invoices
+
+```typescript
+const corrective = InvoiceBuilder.create()
+  .issuer('B12345678', 'My Company SL')
+  .recipient('A87654321', 'Client SA')
+  .type('R1')            // R1: error in law, or art. 80.One/Two/Six
+  .rectification('I')    // 'I' by difference · 'S' by substitution
+  .rectifies('B12345678', '0001', new Date('2026-03-15'), 'FC')
+  .id('FR', '0001', new Date())
+  .description('Correction of invoice FC0001')
+  .addVatBreakdown(-200, 21)
+  .build();
+```
+
+### Simplified invoice (F2)
+
+No recipient: the AEAT rejects the record if one is supplied (error 1190).
+
+```typescript
+const receipt = InvoiceBuilder.create()
+  .issuer('B12345678', 'Pepe Bar SL')
+  .type('F2')
+  .id('T', '000123', new Date())
+  .description('Food and drink')
+  .addVatBreakdown(9.09, 10)
+  .build();
+```
+
+---
+
+## Special regimes
+
+`ClaveRegimen`, `CalificacionOperacion` and `Impuesto` live **on the breakdown line**, not on the
+invoice. The defaults are general regime (`01`), subject and non-exempt (`S1`) and VAT (`01`).
+
+```typescript
+const invoice: Invoice = {
+  // …
+  taxBreakdown: {
+    vatBreakdowns: [
+      { taxBase: 800, vatRate: 21, vatAmount: 168, regime: '11' }, // business premises lease
+      { taxBase: 500, vatRate: 21, vatAmount: 105, regime: '07' }, // cash accounting scheme
+      { taxBase: 300, vatRate: 7, vatAmount: 21, regime: '01', tax: '03' }, // IGIC (Canary Islands)
+    ],
+  },
+  totalAmount: 1894,
+};
+```
+
+**Reverse charge** — with `S2`, rate and amount are zero by definition:
+
+```typescript
+vatBreakdowns: [{ taxBase: 1000, vatRate: 0, vatAmount: 0, qualification: 'S2' }];
+```
+
+**VAT group, advanced level** (regime `06`) — requires `BaseImponibleACoste`:
+
+```typescript
+vatBreakdowns: [{ taxBase: 1000, vatRate: 21, vatAmount: 210, regime: '06', costBase: 800 }];
+```
+
+**Before submitting**, the library checks the coherence rules the AEAT publishes in
+`errores.properties` and which would cause the record to be rejected: regime `08` requires `N2`
+(1252), `03` only allows `S1` (1200), `04` requires `S2` or exempt (1201), `11` requires 21 % (1206),
+`10` requires `N1` + `F1` + a recipient identified by NIF (1205), and a dozen more. A remote
+rejection — with the hash already printed on an invoice that has probably been handed over — becomes
+a local error.
+
+---
+
+## Submitting
+
+### Flow control (article 16.2)
+
+> "Veri\*Factu computer systems **shall implement a flow-control mechanism** based on the waiting
+> time between submissions, which shall initially take the value of 60 seconds."
+
+It is **on by default**. The first submission goes out immediately; the next one waits out the
+remainder of `t` **counted from the previous submission**, not from its response. The AEAT returns
+the current value in every response and the library applies it.
+
+```typescript
+const r1 = await client.submitInvoice(f1); // goes out immediately
+console.log(r1.tiempoEsperaEnvioSeconds);  // e.g. 60
+const r2 = await client.submitInvoice(f2); // waits out the remainder
+```
+
+An in-memory pacer does not protect a process that restarts, so **persist its state**:
+
+```typescript
+await save(client.getFlowControlState()); // { waitSeconds, lastSubmissionAt }
+
+// On the next start-up:
+const client = new VerifactuClient({
+  /* … */
+  flowControl: { state: await load() },
+});
+```
+
+If you govern the cadence outside the library — a queue shared across several processes, say — turn
+it off with `flowControl: false`. The responsibility then becomes yours.
+
+### Batch submission
+
+This is the other branch of article 16.2: wait `t` seconds **or** accumulate records up to the limit
+set by the record layout, *whichever happens first*. Up to **1000** records per request, consuming a
+**single** cadence slot.
+
+```typescript
+const batch = await client.submitInvoices([f1, f2, f3]);
+
+console.log(batch.estadoEnvio);              // 'Correcto' | 'ParcialmenteCorrecto' | 'Incorrecto'
+console.log(batch.tiempoEsperaEnvioSeconds); // for the next submission
+
+for (const r of batch.results) {
+  console.log(r.invoice.id.number, r.state, r.errorCode ?? '');
 }
 ```
 
-##### `submitInvoiceWithRetry(invoice: Invoice, options?): Promise<SubmitInvoiceResponse>`
+> `estadoEnvio` is global and **decides nothing per record**: `ParcialmenteCorrecto` does not imply
+> rejections — a single `AceptadoConErrores` is enough. Use each result's `state`.
 
-Registers an invoice with automatic retry on transient failures.
+The whole batch is validated before the chain is touched: **all or nothing**.
 
-##### `cancelInvoice(invoiceId, issuer, reason?): Promise<SubmitCancellationResponse>`
+### Cancellation
 
-Cancels a registered invoice.
+It travels in the same `RegFactuSistemaFacturacion` message as registrations and takes its own
+position in the chain.
 
 ```typescript
-const response = await client.cancelInvoice(
-  { series: 'A', number: '001', issueDate: new Date('2024-01-15') },
+const r = await client.cancelInvoice(
+  { series: 'FC', number: '0001', issueDate: new Date('2026-03-15') },
   { taxId: { type: 'NIF', value: 'B12345678' }, name: 'My Company SL' },
-  'Error in invoice data'
+  'Wrong recipient details'
 );
 ```
 
-##### `checkInvoiceStatus(invoiceId, issuerNif): Promise<InvoiceStatusResponse>`
-
-Queries the status of an invoice.
+### Status query
 
 ```typescript
 const status = await client.checkInvoiceStatus(
-  { series: 'A', number: '001', issueDate: new Date('2024-01-15') },
+  { series: 'FC', number: '0001', issueDate: new Date('2026-03-15') },
   'B12345678'
 );
-
-if (status.found) {
-  console.log('State:', status.state);
-  console.log('CSV:', status.csv);
-}
 ```
 
-##### `getChainState(): ChainState`
+---
 
-Gets the current chain state (for persistence).
+## The record chain
+
+Every record embeds the previous record's hash. The chain is **local**: it is generated when the
+invoice is issued and **never rolls back**, even if the AEAT rejects the record, because its hash is
+already printed on the QR of an invoice that has probably been handed over. Deleting a generated
+record is precisely what articles 7 and 10 of the RRSIF forbid; the remedy for a rejection is a
+**correcting registration** (*alta de subsanación*).
 
 ```typescript
 const state = client.getChainState();
-// Save to database for later recovery
-saveToDatabase(state);
+await db.save(state); // { lastHash, lastNumber, lastDate, lastSeries, lastIssuerNif, … }
 
-// Later, create client with saved state
-const client2 = new VerifactuClient({
-  ...config,
-  chainState: loadFromDatabase(),
-});
+// After a restart, the chain resumes exactly where it was:
+const client = new VerifactuClient({ /* … */, chainState: await db.load() });
 ```
 
-### InvoiceBuilder
+Save the state **after every submission**. `RecordChain` exposes no `revert`, `rollback` or
+`restore`: going backwards is not a lawful operation.
 
-Fluent builder for creating invoices.
+---
+
+## QR code
+
+The payload is **four parameters and only four** — tax ID, invoice number, date and amount. The
+hash is **not** in the QR.
 
 ```typescript
-const invoice = InvoiceBuilder.create()
-  // Issuer (required)
-  .issuer('B12345678', 'My Company SL')
+import { generateQrCode } from 'verifactu';
 
-  // Recipient (optional for F2)
-  .recipient('A87654321', 'Client SA')
+const r = await client.submitInvoice(invoice);
 
-  // Or foreign recipient
-  .foreignRecipient('FR12345678901', 'Client SARL', 'FR', 'VAT')
+// SVG sized in millimetres, as the specification requires (30–40 mm when printed)
+const qr = generateQrCode(r.invoice, 'production', { size: 35, unit: 'mm' });
+qr.data;    // '<svg …>'
+qr.url;     // https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=…
+qr.version; // 7–11 for Veri*Factu
 
-  // Invoice type
-  .type('F1')  // F1=Standard, F2=Simplified, F3=Rectifying
-
-  // Identification
-  .id('SERIES', '001', new Date())
-
-  // Description (optional)
-  .description('Consulting services')
-
-  // VAT breakdown
-  .addVatBreakdown(1000, 21)  // Base 1000 EUR, VAT 21%
-  .addVatBreakdown(500, 10)   // Base 500 EUR, VAT 10%
-
-  // Or exemption
-  .addExemptBreakdown(200, 'E1')
-
-  // Regime (default '01')
-  .regime('01')
-
-  // Build
-  .build();
+// Data URI, to embed in an <img> inside HTML or a PDF
+const uri = generateQrCode(r.invoice, 'production', { format: 'svg-data-uri', size: 300 });
+// uri.data → 'data:image/svg+xml;base64,…'
 ```
 
-### Validation
+Next to the QR, the invoice must carry the printed caption **«Factura verificable en la sede
+electrónica de la AEAT»** or **«VERI\*FACTU»**.
 
-#### Validate NIF/CIF/NIE
+Systems that do **not** issue verifiable invoices use a different verification URL:
 
 ```typescript
-import { validateSpanishTaxId, isValidSpanishTaxId } from 'verifactu';
-
-// Simple validation
-const isValid = isValidSpanishTaxId('B12345674');
-
-// Validation with details
-const result = validateSpanishTaxId('B12345674');
-if (result.valid) {
-  console.log('Type:', result.type); // 'CIF'
-  console.log('Format:', result.format); // 'B12345674'
-} else {
-  console.log('Error:', result.error);
-}
+import { buildQrUrl } from 'verifactu';
+const url = buildQrUrl(r.invoice, 'production', 'no-verifactu'); // …/ValidarQRNoVerifactu
 ```
 
-#### Validate Invoice
+---
 
-```typescript
-import { validateInvoice, validateInvoiceBusinessRules } from 'verifactu';
+## Errors
 
-// Schema validation
-const schemaResult = validateInvoice(invoice);
-if (!schemaResult.valid) {
-  console.log('Errors:', schemaResult.violations);
-}
-
-// Business rules validation
-const businessResult = validateInvoiceBusinessRules(invoice);
-if (!businessResult.valid) {
-  console.log('Errors:', businessResult.errors);
-  console.log('Warnings:', businessResult.warnings);
-}
-```
-
-### QR Code Generation
-
-```typescript
-import { generateQrCode, buildVerificationUrl } from 'verifactu';
-
-// Generate verification URL
-const url = buildVerificationUrl({
-  nif: 'B12345678',
-  invoiceNumber: 'A001',
-  issueDate: new Date('2024-01-15'),
-  totalAmount: 121.00,
-});
-
-// Generate QR as SVG
-const svg = generateQrCode(url, {
-  size: 200,
-  margin: 4,
-  errorCorrection: 'M',
-});
-
-// Use the SVG
-document.getElementById('qr').innerHTML = svg;
-```
-
-## Invoice Types
-
-| Code | Description |
-|------|-------------|
-| `F1` | Standard invoice |
-| `F2` | Simplified invoice |
-| `F3` | Rectifying invoice |
-| `R1` | Rectifying invoice (legal error) |
-| `R2` | Rectifying invoice (art. 80.3) |
-| `R3` | Rectifying invoice (art. 80.4) |
-| `R4` | Rectifying invoice (other) |
-| `R5` | Simplified rectifying invoice |
-
-## Certificate Configuration
-
-> **Security**: Never include passwords or certificate paths directly in code.
-> Use environment variables or a secrets manager.
-
-### PFX/P12
-
-```typescript
-certificate: {
-  type: 'pfx',
-  path: process.env.CERT_PATH!,
-  password: process.env.CERT_PASSWORD!,
-}
-```
-
-### PEM
-
-```typescript
-certificate: {
-  type: 'pem',
-  certPath: process.env.CERT_PATH!,
-  keyPath: process.env.KEY_PATH!,
-  keyPassword: process.env.KEY_PASSWORD, // optional
-  caPath: process.env.CA_PATH,           // optional
-}
-```
-
-### Buffer (in-memory)
-
-For cloud environments where certificates are injected as secrets:
-
-```typescript
-certificate: {
-  type: 'pfx',
-  data: Buffer.from(process.env.CERT_BASE64!, 'base64'),
-  password: process.env.CERT_PASSWORD!,
-}
-```
-
-## Record Chain
-
-Verifactu maintains a hash chain where each record contains the hash of the previous record, similar to a blockchain. This ensures integrity and traceability of records.
-
-```typescript
-// Persist chain state
-const state = client.getChainState();
-// state = {
-//   lastHash: 'abc123...',
-//   lastNumber: '001',
-//   lastDate: Date,
-//   lastSeries: 'A',
-//   recordCount: 5
-// }
-
-// Save to database
-await db.save('verifactu_chain', state);
-
-// Restore in a new session
-const savedState = await db.load('verifactu_chain');
-const client = new VerifactuClient({
-  ...config,
-  chainState: savedState,
-});
-```
-
-## Error Handling
-
-The library provides a typed error hierarchy:
+They all derive from `VerifactuError` and carry a stable code (`VF1000`, `VF4000`…).
 
 ```typescript
 import {
-  VerifactuError,      // Base error
-  ValidationError,     // Validation errors
-  CryptoError,         // Cryptographic errors
-  NetworkError,        // Network errors
-  AeatError,           // AEAT errors
-  SoapError,           // SOAP errors
-  TimeoutError,        // Timeout
-  ConnectionError,     // Connection failed
+  VerifactuError,
+  ValidationError,
+  CertificateError,
+  HttpStatusError,
+  SoapError,
+  AeatError,
 } from 'verifactu';
 
 try {
   await client.submitInvoice(invoice);
-} catch (error) {
-  if (error instanceof ValidationError) {
-    console.log('Validation error:', error.violations);
-  } else if (error instanceof AeatError) {
-    console.log('AEAT error:', error.message);
-  } else if (error instanceof TimeoutError) {
-    console.log('Timeout:', error.timeout, 'ms');
-  } else if (error instanceof ConnectionError) {
-    console.log('Could not connect to:', error.hostname);
+} catch (e) {
+  if (e instanceof ValidationError) {
+    // The invoice cannot be issued. The chain has NOT moved.
+    console.error(e.message, e.context);
+  } else if (e instanceof CertificateError) {
+    // Includes the diagnosis for legacy-encrypted .p12 files.
+    console.error(e.message);
+  } else if (e instanceof HttpStatusError) {
+    console.error(e.statusCode, e.responseBody);
+  } else if (e instanceof SoapError) {
+    console.error(e.soapFaultCode, e.aeatCode); // e.g. '4102'
+  } else if (e instanceof VerifactuError) {
+    console.error(e.code, e.isRetryable());
   }
 }
 ```
 
-## Automatic Retries
-
-The library provides automatic retries with exponential backoff for transient network errors:
+**A rejection is not an exception.** A record rejected by the AEAT is an ordinary response:
 
 ```typescript
-// Use methods with built-in retry
-const response = await client.submitInvoiceWithRetry(invoice);
-
-// Or configure default retry on client
-const client = new VerifactuClient({
-  ...config,
-  retry: {
-    maxRetries: 3,
-    initialDelayMs: 1000,
-    maxDelayMs: 30000,
-  },
-});
-
-// Also available as standalone utility
-import { withRetry } from 'verifactu';
-
-const result = await withRetry(
-  () => someAsyncOperation(),
-  {
-    maxRetries: 3,
-    initialDelayMs: 1000,
-    onRetry: (attempt, error, delayMs) => {
-      console.log(`Retry ${attempt} in ${delayMs}ms: ${error.message}`);
-    },
-  }
-);
-```
-
-Retryable errors include:
-- `NetworkError` - Transient network errors
-- `TimeoutError` - Connection timeouts
-- `ConnectionError` - Connection failures
-- `AeatServiceUnavailableError` - AEAT service unavailable
-
-## Concurrency Limiting
-
-The library allows limiting concurrent requests to AEAT to avoid saturation or rate limiting:
-
-```typescript
-const client = new VerifactuClient({
-  ...config,
-  maxConcurrency: 5,   // Maximum 5 concurrent requests
-  queueTimeout: 30000, // 30s timeout for queued requests
-});
-
-// Requests exceeding the limit are automatically queued
-const results = await Promise.all([
-  client.submitInvoice(invoice1),
-  client.submitInvoice(invoice2),
-  client.submitInvoice(invoice3),
-  // ... more invoices
-]);
-
-// Get concurrency statistics
-const stats = client.getConcurrencyStats();
-console.log(stats);
-// {
-//   activeCount: 2,      // Active requests
-//   queueLength: 3,      // Queued requests
-//   maxConcurrency: 5,   // Configured limit
-//   isAtCapacity: false  // At capacity?
-// }
-```
-
-If a request exceeds `queueTimeout` while waiting in queue, `QueueTimeoutError` is thrown:
-
-```typescript
-import { QueueTimeoutError } from 'verifactu';
-
-try {
-  await client.submitInvoice(invoice);
-} catch (error) {
-  if (error instanceof QueueTimeoutError) {
-    console.log('Queue timeout:', error.timeout, 'ms');
-    console.log('Queue length:', error.queueLength);
-  }
+const r = await client.submitInvoice(invoice);
+if (!r.accepted) {
+  console.error(r.state, r.errorCode, r.errorDescription);
+  // The lawful remedy is a correcting registration, not resending the same thing.
+}
+if (r.alreadyRegistered) {
+  // The record was already on file. Not a failure either.
 }
 ```
 
-## Injectable Logger
+### Retries
 
-The library allows injecting a custom logger for debugging and monitoring:
+Exponential backoff with jitter. Only the **submission** is retried: the record and its hash are
+generated once, so both attempts send **exactly the same bytes**.
 
 ```typescript
-import { VerifactuClient, consoleLogger } from 'verifactu';
-
-// Use the included console logger
-const client = new VerifactuClient({
-  ...config,
-  logger: consoleLogger,
+const r = await client.submitInvoiceWithRetry(invoice, {
+  maxRetries: 3,
+  initialDelayMs: 1000,
+  onRetry: (attempt, error, delayMs) => log.warn({ attempt, delayMs }, error.message),
 });
+```
 
-// Or use pino/winston
-import pino from 'pino';
+What is retried and what is not: network errors and 5xx/408/425/429 are; a 4xx is not; a `SOAPFault`
+only when its `faultcode` is `soapenv:Server`, which is what the AEAT instructs.
 
+---
+
+## Certificates
+
+```typescript
+// From a file
+certificate: { type: 'pfx', path: '/path/cert.p12', password: process.env.CERT_PASSWORD! }
+
+// From memory (handy in containers, where the secret arrives base64-encoded)
+certificate: { type: 'pfx', data: Buffer.from(process.env.CERT_B64!, 'base64'), password: '…' }
+
+// Separate PEM files
+certificate: { type: 'pem', certPath: '/path/cert.pem', keyPath: '/path/key.pem' }
+```
+
+**Old FNMT certificates.** Node 18+ runs on OpenSSL 3, whose default provider no longer ships RC2 or
+RC4. If your `.p12` comes from an old export, the library detects it and tells you what to do
+instead of handing back an opaque network error (the message is in Spanish):
+
+```
+El certificado usa cifrado heredado (RC2/RC4), que OpenSSL 3 —el que lleva Node 18+—
+no incluye en su proveedor por defecto. […] La contraseña es correcta: el problema es el algoritmo.
+
+Opción A (recomendada) · reexportar con cifrado moderno:
+  openssl pkcs12 -legacy -in certificado-antiguo.p12 -nodes -out temporal.pem
+  openssl pkcs12 -export -in temporal.pem -out certificado-nuevo.p12
+  shred -u temporal.pem     # rm -P on macOS. The intermediate PEM holds the key UNENCRYPTED.
+```
+
+A wrong password produces a different message, deliberately: it sends nobody off to re-export
+anything.
+
+---
+
+## Validation
+
+```typescript
+import { validateSpanishTaxId, validateInvoice, validateInvoiceBusinessRules } from 'verifactu';
+
+validateSpanishTaxId('Q2826000H'); // { valid: true, type: 'cif',  normalized: 'Q2826000H' }
+validateSpanishTaxId('M1234567L'); // { valid: true, type: 'nif' }  ← K/L/M are individuals
+validateSpanishTaxId('12345678A'); // { valid: false, error: 'Invalid control letter: expected Z' }
+
+const schema = validateInvoice(invoice);                // structure
+const business = validateInvoiceBusinessRules(invoice); // AEAT rules
+if (!schema.valid) console.error(schema.violations);
+```
+
+---
+
+## Client options
+
+```typescript
 const client = new VerifactuClient({
-  ...config,
-  logger: pino(),
-});
+  environment: 'sandbox',
+  certificate: { /* … */ },
+  software: { /* … */ },
 
-// Or a custom logger
-const client = new VerifactuClient({
-  ...config,
-  logger: {
-    debug: (msg, meta) => myLogger.debug(msg, meta),
-    info: (msg, meta) => myLogger.info(msg, meta),
-    warn: (msg, meta) => myLogger.warn(msg, meta),
-    error: (msg, meta) => myLogger.error(msg, meta),
+  timeout: 30_000,        // ms per request
+  maxConcurrency: 4,      // simultaneous requests (distinct from flow control)
+  queueTimeout: 30_000,   // maximum wait in the queue
+  retry: { maxRetries: 3, initialDelayMs: 1000 },
+  flowControl: { state: saved },
+  chainState: savedChain,
+  logger: {               // any object with these four methods
+    debug: (m, c) => log.debug(c, m),
+    info:  (m, c) => log.info(c, m),
+    warn:  (m, c) => log.warn(c, m),
+    error: (m, c) => log.error(c, m),
   },
 });
 ```
 
-### Logged Events
+The logger receives **sanitised** XML: tax IDs, names and hashes are never written out in full.
 
-| Level | Event |
-|-------|-------|
-| `debug` | Request/response XML (sanitized) |
-| `info` | Invoice submitted, cancelled, queried |
-| `warn` | Retry initiated, AEAT rejection |
-| `error` | Network error, timeout, validation |
+---
 
-### Filter by Level
+## Conformance: what is verified, and against what
 
-```typescript
-import { createLevelFilteredLogger, consoleLogger } from 'verifactu';
+The risk in a tax library is not that it fails — it is that it **passes its own tests and is not
+conformant**. That is why no conformance test uses the implementation as its oracle:
 
-// Only show warn and error
-const logger = createLevelFilteredLogger(consoleLogger, 'warn');
-```
+| Level | External oracle | What it catches |
+|---|---|---|
+| Hash vectors | The three chained examples published by the AEAT | Field order, `trim`, date format with offset, uppercase hex |
+| XSD validation | Vendored `SuministroLR.xsd` and `SuministroInformacion.xsd` | Structure, ordering, namespaces, enumerated values |
+| QR decoding | `jsqr`, an independent reader | That the QR **can be read** and says what it must |
+| WSDL | `SistemaFacturacion.wsdl` | Endpoints, `SOAPAction`, operation names |
+| Error catalogue | `errores.properties` | The breakdown coherence rules |
 
-## Advanced Examples
+The schemas are **frozen by sha256**: if the AEAT publishes a revision, CI fails and forces someone
+to review the diff instead of silently carrying it along (`npm run schemas:check`).
 
-### Rectifying Invoice
+Two blind spots, **measured**, so that nobody over-trusts the XSD: a Base64 hash validates against
+the schema, and so does a `FechaHoraHusoGenRegistro` with no time-zone offset. That is why the
+official vectors are not redundant.
 
-```typescript
-const rectifying = InvoiceBuilder.create()
-  .issuer('B12345678', 'My Company SL')
-  .recipient('A87654321', 'Client SA')
-  .type('F3')
-  .rectifiedInvoiceType('S') // Substitution
-  .addRectifiedInvoice('B12345678', {
-    series: 'A',
-    number: '001',
-    issueDate: new Date('2024-01-15'),
-  })
-  .id('A', '002', new Date())
-  .addVatBreakdown(-100, 21) // Negative amounts to cancel
-  .build();
-```
+---
 
-### Invoice with Multiple VAT Rates
-
-```typescript
-const invoice = InvoiceBuilder.create()
-  .issuer('B12345678', 'Supermarket SL')
-  .recipient('12345678Z', 'John Smith')
-  .type('F1')
-  .id('T', '001', new Date())
-  .addVatBreakdown(50, 21)   // General products
-  .addVatBreakdown(30, 10)   // Reduced rate products
-  .addVatBreakdown(20, 4)    // Super-reduced rate products
-  .build();
-```
-
-### Invoice with Exemption
-
-```typescript
-const invoice = InvoiceBuilder.create()
-  .issuer('B12345678', 'Academy SL')
-  .recipient('A87654321', 'Company SA')
-  .type('F1')
-  .id('E', '001', new Date())
-  .addExemptBreakdown(500, 'E1') // Exempt for training
-  .description('Professional training course')
-  .build();
-```
-
-## Scripts
+## Development
 
 ```bash
-# Build
-npm run build
-
-# Tests
-npm test
-
-# Tests with watch
-npm run test:watch
-
-# Coverage
-npm run test:coverage
-
-# Lint
-npm run lint
-npm run lint:fix
-
-# Type check
-npm run typecheck
+npm run build            # ESM + CJS + types
+npm test                 # 977 tests
+npm run test:conformance # only the layer that checks against the AEAT
+npm run test:coverage    # with thresholds
+npm run typecheck        # src
+npm run typecheck:tests  # tests (they compile too)
+npm run lint:all         # src + tests
+npm run schemas:check    # integrity of the official schemas (no network)
 ```
-
-## Requirements
-
-- Node.js >= 18.0.0
-- Valid digital certificate (FNMT, etc.)
-- Registration in the AEAT Verifactu system
 
 ## Security
 
-### Certificate Handling
-
-1. **Never commit certificates or passwords** to the repository
-2. **Use environment variables** for paths and passwords
-3. **In production**, use a secrets manager (AWS Secrets Manager, Azure Key Vault, HashiCorp Vault)
-
-### Recommended Environment Variables
+Never commit certificates or passwords. `.gitignore` already excludes `*.p12`, `*.pfx` and `*.pem`.
 
 ```bash
-# .env (never commit this file)
-VERIFACTU_ENV=sandbox
-CERT_PATH=/secure/path/to/certificate.pfx
-CERT_PASSWORD=your-secure-password
-DEVELOPER_TAX_ID=B12345678
+# .env — never in git
+CERT_PATH=/secure/path/certificate.p12
+CERT_PASSWORD=…
 ```
 
-### CI/CD Configuration
-
-```yaml
-# GitHub Actions
-- name: Run tests
-  env:
-    CERT_PATH: ${{ secrets.CERT_PATH }}
-    CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
-  run: npm test
-```
-
-### Kubernetes / Docker
-
-```yaml
-# Mount certificate from Secret
-volumes:
-  - name: cert-volume
-    secret:
-      secretName: verifactu-cert
-containers:
-  - name: app
-    env:
-      - name: CERT_PATH
-        value: /etc/certs/certificate.pfx
-      - name: CERT_PASSWORD
-        valueFrom:
-          secretKeyRef:
-            name: verifactu-secrets
-            key: cert-password
-```
-
-### In-Memory Certificates (Cloud)
-
-For environments where the certificate is injected as a base64 environment variable:
-
-```typescript
-const certBuffer = Buffer.from(process.env.CERT_BASE64!, 'base64');
-
-const client = new VerifactuClient({
-  certificate: {
-    type: 'pfx',
-    data: certBuffer,
-    password: process.env.CERT_PASSWORD!,
-  },
-  // ...
-});
-```
-
-## Contributing
-
-Please read our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before submitting a pull request.
+Found a vulnerability? Please open a
+[private security advisory](https://github.com/ramoncoroso/verifactu/security/advisories/new)
+rather than a public issue.
 
 ## Resources
 
-- [AEAT Verifactu Documentation](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu.html)
-- [Technical Specifications](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu/especificaciones-tecnicas.html)
+- [Order HAC/1177/2024](https://www.boe.es/diario_boe/txt.php?id=BOE-A-2024-22138)
+- [Royal Decree 1007/2023 (RRSIF)](https://www.boe.es/diario_boe/txt.php?id=BOE-A-2023-24840)
+- [AEAT e-Office · Veri\*Factu](https://sede.agenciatributaria.gob.es/Sede/iva/sistemas-informaticos-facturacion-verifactu.html)
+- [Technical specifications and XSDs](https://www.agenciatributaria.es/AEAT.desarrolladores/Desarrolladores/_menu_/Documentacion/Sistemas_Informaticos_de_Facturacion_y_Sistemas_VERI_FACTU/Sistemas_Informaticos_de_Facturacion_y_Sistemas_VERI_FACTU.html)
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). House rule: **a finding is fixed with a test that fails
+first**, and tests that contradict the specification are deleted, not updated.
 
 ## License
 
-MIT
+MIT © Ramón Coroso — see [`LICENSE`](LICENSE).
