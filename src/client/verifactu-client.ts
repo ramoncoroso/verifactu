@@ -13,7 +13,6 @@ import { RecordChain } from '../crypto/chain.js';
 import type { ChainState } from '../crypto/chain.js';
 import { SoapClient, createSoapClient } from './soap-client.js';
 import { getEndpoints, SOAP_ACTIONS, type Environment, type ServiceEndpoints } from './endpoints.js';
-import { AeatError } from '../errors/network-errors.js';
 import { formatAeatDate } from '../format/aeat.js';
 import {
   mapCabecera,
@@ -24,7 +23,15 @@ import {
   buildRegFactuSistemaFacturacion,
   wrapSoapEnvelope,
 } from '../xml/verifactu/registro.js';
-import { findNode, getChildText } from '../xml/parser.js';
+import {
+  fueAceptado,
+  parseConsultaResponse as parseConsulta,
+  parseSuministroResponse,
+  type EstadoEnvio,
+  type EstadoRegistro,
+  type RegistroDuplicadoInfo,
+  type RespuestaLinea,
+} from './respuesta.js';
 import type { XmlNode } from '../xml/parser.js';
 import { withRetry, type RetryOptions } from './retry.js';
 import { ConcurrencyLimiter, type ConcurrencyStats } from './concurrency.js';
@@ -60,8 +67,21 @@ export interface VerifactuClientConfig {
 export interface SubmitInvoiceResponse {
   /** Whether the submission was accepted */
   accepted: boolean;
-  /** Record state from AEAT */
-  state: 'Correcto' | 'AceptadoConErrores' | 'Rechazado';
+  /**
+   * Estado del registro.
+   *
+   * `Incorrecto`, no `Rechazado`: ese valor nunca existió en el enumerado de la
+   * AEAT y el tipo anterior lo declaraba.
+   */
+  state: EstadoRegistro;
+  /** Estado global del envío. */
+  estadoEnvio?: EstadoEnvio;
+  /** Segundos a esperar antes del siguiente envío (art. 16.2). */
+  tiempoEsperaEnvioSeconds?: number;
+  /** Sello temporal de la AEAT, que acredita la remisión. */
+  timestampPresentacion?: Date;
+  /** Presente si el registro ya constaba: no es un fallo. */
+  alreadyRegistered?: RegistroDuplicadoInfo;
   /** AEAT CSV (secure verification code) */
   csv?: string;
   /** Error code (if rejected) */
@@ -78,8 +98,16 @@ export interface SubmitInvoiceResponse {
 export interface SubmitCancellationResponse {
   /** Whether the cancellation was accepted */
   accepted: boolean;
-  /** Record state from AEAT */
-  state: 'Correcto' | 'AceptadoConErrores' | 'Rechazado';
+  /** Estado del registro. */
+  state: EstadoRegistro;
+  /** Estado global del envío. */
+  estadoEnvio?: EstadoEnvio;
+  /** Segundos a esperar antes del siguiente envío (art. 16.2). */
+  tiempoEsperaEnvioSeconds?: number;
+  /** Sello temporal de la AEAT. */
+  timestampPresentacion?: Date;
+  /** Presente si el registro ya constaba. */
+  alreadyRegistered?: RegistroDuplicadoInfo;
   /** AEAT CSV (secure verification code) */
   csv?: string;
   /** Error code (if rejected) */
@@ -623,81 +651,88 @@ export class VerifactuClient {
   /**
    * Parse Alta response
    */
+  /** Extrae de la respuesta los campos comunes a alta y anulación. */
+  private parseLineaUnica(xml: XmlNode): {
+    linea: RespuestaLinea;
+    estadoEnvio: EstadoEnvio;
+    tiempoEsperaEnvioSeconds: number;
+    csv?: string;
+    timestampPresentacion?: Date;
+  } {
+    const r = parseSuministroResponse(xml);
+    // El envío que hace hoy el cliente lleva un solo registro. Con lotes habrá
+    // que casar cada línea por IDFactura y RefExterna.
+    const linea = r.lineas[0] ?? { estadoRegistro: 'Incorrecto' as const };
+    const out: {
+      linea: RespuestaLinea;
+      estadoEnvio: EstadoEnvio;
+      tiempoEsperaEnvioSeconds: number;
+      csv?: string;
+      timestampPresentacion?: Date;
+    } = {
+      linea,
+      estadoEnvio: r.estadoEnvio,
+      tiempoEsperaEnvioSeconds: r.tiempoEsperaEnvioSeconds,
+    };
+    if (r.csv !== undefined) out.csv = r.csv;
+    if (r.timestampPresentacion !== undefined) out.timestampPresentacion = r.timestampPresentacion;
+    return out;
+  }
+
   private parseAltaResponse(
     xml: XmlNode,
     invoice: Invoice & { hash: string }
   ): SubmitInvoiceResponse {
-    const respuesta = findNode(xml, 'RespuestaRegFactura') ?? findNode(xml, 'Respuesta');
-    if (!respuesta) {
-      throw new AeatError('Invalid response: missing RespuestaRegFactura');
-    }
+    const { linea, estadoEnvio, tiempoEsperaEnvioSeconds, csv, timestampPresentacion } =
+      this.parseLineaUnica(xml);
 
-    const estado = getChildText(respuesta, 'EstadoRegistro') ?? getChildText(respuesta, 'Estado');
-    const csv = getChildText(respuesta, 'CSV');
-    const codigoError = getChildText(respuesta, 'CodigoErrorRegistro');
-    const descripcionError = getChildText(respuesta, 'DescripcionErrorRegistro');
-
-    const state = (estado as 'Correcto' | 'AceptadoConErrores' | 'Rechazado') ?? 'Rechazado';
-    const accepted = state === 'Correcto' || state === 'AceptadoConErrores';
-
-    const response: SubmitInvoiceResponse = { accepted, state, invoice };
+    const response: SubmitInvoiceResponse = {
+      accepted: fueAceptado(linea),
+      state: linea.estadoRegistro,
+      estadoEnvio,
+      tiempoEsperaEnvioSeconds,
+      invoice,
+    };
     if (csv !== undefined) response.csv = csv;
-    if (codigoError !== undefined) response.errorCode = codigoError;
-    if (descripcionError !== undefined) response.errorDescription = descripcionError;
+    if (timestampPresentacion !== undefined) response.timestampPresentacion = timestampPresentacion;
+    if (linea.codigoError !== undefined) response.errorCode = linea.codigoError;
+    if (linea.descripcionError !== undefined) response.errorDescription = linea.descripcionError;
+    if (linea.registroDuplicado !== undefined) response.alreadyRegistered = linea.registroDuplicado;
     return response;
   }
 
-  /**
-   * Parse Anulación response
-   */
   private parseAnulacionResponse(
     xml: XmlNode,
     cancellation: InvoiceCancellation & { hash: string }
   ): SubmitCancellationResponse {
-    const respuesta = findNode(xml, 'RespuestaAnulacion') ?? findNode(xml, 'Respuesta');
-    if (!respuesta) {
-      throw new AeatError('Invalid response: missing RespuestaAnulacion');
-    }
+    const { linea, estadoEnvio, tiempoEsperaEnvioSeconds, csv, timestampPresentacion } =
+      this.parseLineaUnica(xml);
 
-    const estado = getChildText(respuesta, 'EstadoRegistro') ?? getChildText(respuesta, 'Estado');
-    const csv = getChildText(respuesta, 'CSV');
-    const codigoError = getChildText(respuesta, 'CodigoErrorRegistro');
-    const descripcionError = getChildText(respuesta, 'DescripcionErrorRegistro');
-
-    const state = (estado as 'Correcto' | 'AceptadoConErrores' | 'Rechazado') ?? 'Rechazado';
-    const accepted = state === 'Correcto' || state === 'AceptadoConErrores';
-
-    const response: SubmitCancellationResponse = { accepted, state, cancellation };
+    const response: SubmitCancellationResponse = {
+      accepted: fueAceptado(linea),
+      state: linea.estadoRegistro,
+      estadoEnvio,
+      tiempoEsperaEnvioSeconds,
+      cancellation,
+    };
     if (csv !== undefined) response.csv = csv;
-    if (codigoError !== undefined) response.errorCode = codigoError;
-    if (descripcionError !== undefined) response.errorDescription = descripcionError;
+    if (timestampPresentacion !== undefined) response.timestampPresentacion = timestampPresentacion;
+    if (linea.codigoError !== undefined) response.errorCode = linea.codigoError;
+    if (linea.descripcionError !== undefined) response.errorDescription = linea.descripcionError;
+    if (linea.registroDuplicado !== undefined) response.alreadyRegistered = linea.registroDuplicado;
     return response;
   }
 
-  /**
-   * Parse Consulta response
-   */
   private parseConsultaResponse(xml: XmlNode): InvoiceStatusResponse {
-    const respuesta = findNode(xml, 'RespuestaConsulta') ?? findNode(xml, 'Respuesta');
-    if (!respuesta) {
-      return { found: false };
+    const r = parseConsulta(xml);
+    const out: InvoiceStatusResponse = { found: r.found };
+    if (r.estadoRegistro !== undefined) out.state = r.estadoRegistro;
+    if (r.timestampUltimaModificacion !== undefined) {
+      out.registrationTimestamp = r.timestampUltimaModificacion;
     }
-
-    const registro = findNode(respuesta, 'RegistroRespuestaConsulta');
-    if (!registro) {
-      return { found: false };
-    }
-
-    const estado = getChildText(registro, 'EstadoRegistro');
-    const csv = getChildText(registro, 'CSV');
-    const fechaHora = getChildText(registro, 'FechaHoraRegistro');
-
-    const response: InvoiceStatusResponse = { found: true };
-    if (estado !== undefined) response.state = estado;
-    if (csv !== undefined) response.csv = csv;
-    if (fechaHora !== undefined) response.registrationTimestamp = new Date(fechaHora);
-    return response;
+    return out;
   }
+
 }
 
 /**

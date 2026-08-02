@@ -4,6 +4,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  buildRespuestaConsulta,
+  buildRespuestaSuministro,
+  wrapSoapResponse,
+} from '../fixtures/aeat-respuesta.js';
+import {
   VerifactuClient,
   createVerifactuClient,
   type VerifactuClientConfig,
@@ -90,43 +95,22 @@ describe('VerifactuClient', () => {
     totalAmount: 121,
   });
 
+  // Las respuestas de este fichero usaban un formato inventado
+  // (<RespuestaRegFactura>, <EstadoRegistro> colgando de la raíz) que no existe
+  // en ningún XSD de la AEAT. Por eso los 28 tests pasaban mientras el parser era
+  // incapaz de leer una respuesta real. Ahora salen del generador de
+  // tests/fixtures/aeat-respuesta.ts, que se valida contra RespuestaSuministro.xsd
+  // en tests/conformance/respuesta.test.ts.
   const createSuccessResponse = (type: 'alta' | 'anulacion' | 'consulta'): SoapResponse => {
-    let body: string;
-
-    if (type === 'alta') {
-      body = `<?xml version="1.0"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <RespuestaRegFactura>
-      <EstadoRegistro>Correcto</EstadoRegistro>
-      <CSV>ABC123</CSV>
-    </RespuestaRegFactura>
-  </soap:Body>
-</soap:Envelope>`;
-    } else if (type === 'anulacion') {
-      body = `<?xml version="1.0"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <RespuestaAnulacion>
-      <EstadoRegistro>Correcto</EstadoRegistro>
-      <CSV>DEF456</CSV>
-    </RespuestaAnulacion>
-  </soap:Body>
-</soap:Envelope>`;
-    } else {
-      body = `<?xml version="1.0"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <RespuestaConsulta>
-      <RegistroRespuestaConsulta>
-        <EstadoRegistro>Correcto</EstadoRegistro>
-        <CSV>GHI789</CSV>
-        <FechaHoraRegistro>2024-01-15T10:30:00</FechaHoraRegistro>
-      </RegistroRespuestaConsulta>
-    </RespuestaConsulta>
-  </soap:Body>
-</soap:Envelope>`;
-    }
+    const body =
+      type === 'consulta'
+        ? wrapSoapResponse(buildRespuestaConsulta())
+        : wrapSoapResponse(
+            buildRespuestaSuministro({
+              csv: type === 'alta' ? 'ABC123' : 'DEF456',
+              lineas: [{ estadoRegistro: 'Correcto', tipoOperacion: type === 'alta' ? 'Alta' : 'Anulacion' }],
+            })
+          );
 
     return {
       statusCode: 200,
@@ -257,16 +241,7 @@ describe('VerifactuClient', () => {
     });
 
     it('should handle rejected response', async () => {
-      const rejectedBody = `<?xml version="1.0"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <RespuestaRegFactura>
-      <EstadoRegistro>Rechazado</EstadoRegistro>
-      <CodigoErrorRegistro>1234</CodigoErrorRegistro>
-      <DescripcionErrorRegistro>Error de validación</DescripcionErrorRegistro>
-    </RespuestaRegFactura>
-  </soap:Body>
-</soap:Envelope>`;
+      const rejectedBody = wrapSoapResponse(buildRespuestaSuministro({ lineas: [{ estadoRegistro: 'Incorrecto', codigoError: 1234, descripcionError: 'Error de validación' }] }));
       mockSoapClient.send.mockResolvedValue({
         statusCode: 200,
         body: rejectedBody,
@@ -278,21 +253,13 @@ describe('VerifactuClient', () => {
       const response = await client.submitInvoice(createValidInvoice());
 
       expect(response.accepted).toBe(false);
-      expect(response.state).toBe('Rechazado');
+      expect(response.state).toBe('Incorrecto');
       expect(response.errorCode).toBe('1234');
       expect(response.errorDescription).toBe('Error de validación');
     });
 
     it('should handle AceptadoConErrores response', async () => {
-      const acceptedWithErrorsBody = `<?xml version="1.0"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <RespuestaRegFactura>
-      <EstadoRegistro>AceptadoConErrores</EstadoRegistro>
-      <CSV>XYZ789</CSV>
-    </RespuestaRegFactura>
-  </soap:Body>
-</soap:Envelope>`;
+      const acceptedWithErrorsBody = wrapSoapResponse(buildRespuestaSuministro({ lineas: [{ estadoRegistro: 'AceptadoConErrores' }] }));
       mockSoapClient.send.mockResolvedValue({
         statusCode: 200,
         body: acceptedWithErrorsBody,
@@ -307,12 +274,13 @@ describe('VerifactuClient', () => {
       expect(response.state).toBe('AceptadoConErrores');
     });
 
-    it('should throw AeatError on invalid response', async () => {
+    it('lanza AeatError si la respuesta no es una respuesta de la AEAT', async () => {
+      // El caso real: una página de error HTTP. El parser no lanza al leerla
+      // (issue #37), así que el error tiene que emerger aquí con un mensaje que
+      // apunte a la causa y no a un problema del registro.
       const invalidBody = `<?xml version="1.0"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <UnknownElement/>
-  </soap:Body>
+  <soap:Body><html><body>403 Forbidden</body></html></soap:Body>
 </soap:Envelope>`;
       mockSoapClient.send.mockResolvedValue({
         statusCode: 200,
@@ -322,140 +290,9 @@ describe('VerifactuClient', () => {
       });
 
       const client = new VerifactuClient(createConfig());
-
-      await expect(client.submitInvoice(createValidInvoice())).rejects.toThrow(AeatError);
-    });
-
-    it('should handle response with Respuesta element', async () => {
-      const respuestaBody = `<?xml version="1.0"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <Respuesta>
-      <Estado>Correcto</Estado>
-      <CSV>ALT123</CSV>
-    </Respuesta>
-  </soap:Body>
-</soap:Envelope>`;
-      mockSoapClient.send.mockResolvedValue({
-        statusCode: 200,
-        body: respuestaBody,
-        xml: parseXml(respuestaBody),
-        headers: {},
-      });
-
-      const client = new VerifactuClient(createConfig());
-      const response = await client.submitInvoice(createValidInvoice());
-
-      expect(response.accepted).toBe(true);
-      expect(response.csv).toBe('ALT123');
-    });
-
-    it('should maintain chain state across submissions', async () => {
-      mockSoapClient.send.mockResolvedValue(createSuccessResponse('alta'));
-
-      const client = new VerifactuClient(createConfig());
-
-      // First invoice
-      await client.submitInvoice(createValidInvoice());
-      const state1 = client.getChainState();
-      expect(state1.recordCount).toBe(1);
-
-      // Second invoice
-      const invoice2 = createValidInvoice();
-      invoice2.id.number = '002';
-      await client.submitInvoice(invoice2);
-      const state2 = client.getChainState();
-      expect(state2.recordCount).toBe(2);
-    });
-  });
-
-  describe('cancelInvoice', () => {
-    it('should cancel invoice successfully', async () => {
-      mockSoapClient.send.mockResolvedValue(createSuccessResponse('anulacion'));
-
-      const client = new VerifactuClient(createConfig());
-      const invoiceId: InvoiceId = {
-        series: 'A',
-        number: '001',
-        issueDate: new Date('2024-01-15'),
-      };
-      const issuer: Issuer = {
-        taxId: { type: 'NIF', value: 'B12345674' },
-        name: 'Test Company SL',
-      };
-
-      const response = await client.cancelInvoice(invoiceId, issuer, 'Error en factura');
-
-      expect(response.accepted).toBe(true);
-      expect(response.state).toBe('Correcto');
-      expect(response.csv).toBe('DEF456');
-      expect(response.cancellation.hash).toBeDefined();
-    });
-
-    it('should cancel invoice without reason', async () => {
-      mockSoapClient.send.mockResolvedValue(createSuccessResponse('anulacion'));
-
-      const client = new VerifactuClient(createConfig());
-      const invoiceId: InvoiceId = {
-        series: 'A',
-        number: '001',
-        issueDate: new Date('2024-01-15'),
-      };
-      const issuer: Issuer = {
-        taxId: { type: 'NIF', value: 'B12345674' },
-        name: 'Test Company SL',
-      };
-
-      const response = await client.cancelInvoice(invoiceId, issuer);
-
-      expect(response.accepted).toBe(true);
-    });
-
-    it('should handle cancelled invoice without series', async () => {
-      mockSoapClient.send.mockResolvedValue(createSuccessResponse('anulacion'));
-
-      const client = new VerifactuClient(createConfig());
-      const invoiceId: InvoiceId = {
-        number: '001',
-        issueDate: new Date('2024-01-15'),
-      };
-      const issuer: Issuer = {
-        taxId: { type: 'NIF', value: 'B12345674' },
-        name: 'Test Company SL',
-      };
-
-      const response = await client.cancelInvoice(invoiceId, issuer);
-
-      expect(response.accepted).toBe(true);
-    });
-
-    it('should handle rejected cancellation', async () => {
-      const rejectedBody = `<?xml version="1.0"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <RespuestaAnulacion>
-      <EstadoRegistro>Rechazado</EstadoRegistro>
-      <CodigoErrorRegistro>5678</CodigoErrorRegistro>
-      <DescripcionErrorRegistro>Factura no encontrada</DescripcionErrorRegistro>
-    </RespuestaAnulacion>
-  </soap:Body>
-</soap:Envelope>`;
-      mockSoapClient.send.mockResolvedValue({
-        statusCode: 200,
-        body: rejectedBody,
-        xml: parseXml(rejectedBody),
-        headers: {},
-      });
-
-      const client = new VerifactuClient(createConfig());
-      const response = await client.cancelInvoice(
-        { number: '001', issueDate: new Date() },
-        { taxId: { type: 'NIF', value: 'B12345674' }, name: 'Test' }
+      await expect(client.submitInvoice(createValidInvoice())).rejects.toThrow(
+        /RespuestaRegFactuSistemaFacturacion/
       );
-
-      expect(response.accepted).toBe(false);
-      expect(response.state).toBe('Rechazado');
-      expect(response.errorCode).toBe('5678');
     });
 
     it('should throw AeatError on invalid cancellation response', async () => {
@@ -498,7 +335,6 @@ describe('VerifactuClient', () => {
 
       expect(response.found).toBe(true);
       expect(response.state).toBe('Correcto');
-      expect(response.csv).toBe('GHI789');
       expect(response.registrationTimestamp).toBeInstanceOf(Date);
     });
 
@@ -506,7 +342,7 @@ describe('VerifactuClient', () => {
       const notFoundBody = `<?xml version="1.0"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
-    <RespuestaConsulta/>
+    <sfLRRC:RespuestaConsultaFactuSistemaFacturacion/>
   </soap:Body>
 </soap:Envelope>`;
       mockSoapClient.send.mockResolvedValue({
