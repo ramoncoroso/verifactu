@@ -2,7 +2,7 @@
  * Tests for Hash Functions
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   sha256,
   sha256Hex,
@@ -285,5 +285,28 @@ describe('Hash Functions', () => {
 
       expect(hashWithoutPrev).not.toBe(hashWithPrev);
     });
+  });
+});
+
+
+describe('formatTimestamp timezone offset', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('formats fractional eastern offsets correctly (Asia/Kolkata +05:30)', () => {
+    vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(-330);
+    const input = buildAltaHashInput({
+      issuerNif: 'B12345678',
+      invoiceNumber: 'A001',
+      issueDate: new Date('2024-01-15'),
+      invoiceType: 'F1',
+      vatTotal: 21,
+      totalAmount: 121,
+      previousHash: '',
+      generationTimestamp: new Date('2024-06-01T12:00:00Z'),
+    });
+    expect(input).toMatch(/FechaHoraHusoGenRegistro=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+05:30/);
+    expect(input).not.toContain('+06:30');
   });
 });
