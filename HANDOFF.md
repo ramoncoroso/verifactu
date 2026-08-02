@@ -2,10 +2,10 @@
 
 Librería TypeScript para el sistema **Veri\*Factu** de la AEAT. Node.js 18+.
 
-> ## Estado: todos los issues técnicos cerrados, falta preproducción
+> ## Estado: todos los issues cerrados, falta la prueba contra preproducción
 >
-> **Los once hallazgos bloqueantes y los doce issues técnicos abiertos están
-> cerrados.** El XML valida contra el XSD oficial, la huella reproduce los
+> **Todos los issues están cerrados**: los once hallazgos bloqueantes y los
+> trece issues del backlog. El XML valida contra el XSD oficial, la huella reproduce los
 > vectores publicados por la AEAT, el QR lo decodifica un lector independiente,
 > los endpoints salen del WSDL, las respuestas se parsean con los nombres reales,
 > el control de flujo del art. 16.2 está implementado y el envío por lotes
@@ -30,14 +30,14 @@ documentos**.
 
 | | |
 |---|---|
-| Tests | **977** en verde (34 ficheros) |
+| Tests | **989** en verde (35 ficheros) |
 | Cobertura | 93,5 % · umbrales 91/94/87/91, ajustados a la realidad |
 | `typecheck` + `typecheck:tests` | limpios, ambos bloqueantes en CI |
 | `lint:all` | limpio (14 warnings `no-console` intencionados) |
 | Dependencias de runtime | **1** (`qrcode-generator`, MIT, 0 transitivas) |
 | `npm audit --omit=dev` | 0 vulnerabilidades, puerta de tolerancia cero |
 | Duración de la suite | 4,5 s |
-| Issues abiertos | **1**, y es una decisión tuya: [#46](https://github.com/ramoncoroso/verifactu/issues/46) |
+| Issues abiertos | **0** |
 | Publicación en npm | **desarmada** a doble llave (ver abajo) |
 
 ---
@@ -79,6 +79,8 @@ vendorizado en `schemas/` y **congelado por sha256**.
 | [#83](https://github.com/ramoncoroso/verifactu/pull/83) | #22 #36 | `SubmissionPacer` (art. 16.2) + `submitInvoices()` hasta 1000 registros |
 | [#84](https://github.com/ramoncoroso/verifactu/pull/84) | #29 | Diagnóstico accionable de los `.p12` heredados, también en el camino real |
 | [#85](https://github.com/ramoncoroso/verifactu/pull/85) | #68 #28 | Los tests entran en la puerta de calidad; prueba de mutación documentada |
+| [#86](https://github.com/ramoncoroso/verifactu/pull/86) | — | README en ambos idiomas, con los 24 ejemplos compilados antes de publicarlos |
+| [#87](https://github.com/ramoncoroso/verifactu/pull/87) | #46 | Alcance `@ramoncoroso/verifactu`, acceso público y esquemas fuera del tarball |
 
 ### Decisiones que conviene no revertir sin leer el porqué
 
@@ -101,6 +103,10 @@ vendorizado en `schemas/` y **congelado por sha256**.
 - **La validación se ejecuta antes de mover la cadena.** `prepareAlta` avanzaba
   el estado antes de construir el XML; una factura no serializable dejaba la
   cadena apuntando a un registro fantasma.
+- **El paquete va con alcance.** `verifactu` a secas pertenece a un tercero desde
+  2024 —223 bytes, nunca actualizado—. Reclamarlo era lento e incierto y habría
+  bloqueado la publicación mientras tanto; el alcance está disponible hoy y
+  conserva la marca.
 - **La auditoría de seguridad es de alcance, no de umbral.** Árbol de producción
   con tolerancia cero (bloqueante); árbol completo, informativo. No hay nivel que
   bajar la próxima vez.
@@ -110,29 +116,22 @@ vendorizado en `schemas/` y **congelado por sha256**.
 1. La variable de repositorio `RELEASE_ENABLED` no está puesta.
 2. `npmPublish: false` en la configuración de `semantic-release`.
 
-**No pongas `NPM_TOKEN`** hasta resolver [#46](https://github.com/ramoncoroso/verifactu/issues/46).
-El `ROADMAP.md` lo dice también, con esa misma redacción invertida a propósito.
+Sigue así **a propósito**, aunque el nombre ya esté resuelto: falta la prueba contra
+preproducción, y abrir la publicación son tres actos deliberados que nadie puede hacer
+desde el código. El `ROADMAP.md` lleva la lista, con dos de sus tres casillas ya marcadas.
+
+El paquete se publica como **`@ramoncoroso/verifactu`**, con
+`publishConfig.access: "public"` —npm publica los paquetes con alcance como privados por
+defecto y sin eso el `publish` falla con un 402—. Y el tarball ya **no** lleva `schemas/`:
+ningún módulo de `src/` los lee en tiempo de ejecución, así que redistribuir documentos de
+la AEAT y del W3C en un paquete que se anuncia MIT no aportaba nada. El tarball bajó a 10
+ficheros.
 
 ---
 
 ## Cómo continuar
 
-### 1. Resolver el nombre en npm — [#46](https://github.com/ramoncoroso/verifactu/issues/46) · **decisión tuya**
-
-Es el único issue abierto y no se puede cerrar desde el código. `verifactu` está
-ocupado en npm por un tercero. Opciones, de más a menos recomendable:
-
-- **Alcance de organización**: `@ramoncoroso/verifactu` o `@<empresa>/verifactu`.
-  Es gratis para paquetes públicos, no depende de nadie y no hay que renombrar
-  nada dentro del código.
-- **Otro nombre**: `verifactu-ts`, `verifactu-client`, `aeat-verifactu`. Hay que
-  comprobar disponibilidad antes.
-- **Reclamar el nombre** vía la política de disputas de npm. Lento, incierto y
-  probablemente innecesario.
-
-Mientras tanto, el README ya documenta la instalación desde GitHub.
-
-### 2. Prueba contra preproducción · **el paso que falta**
+### 1. Prueba contra preproducción · **el único paso que falta**
 
 Es lo único que separa a la librería de estar verificada de punta a punta.
 Necesita un certificado electrónico de representante o de sello válido.
@@ -155,7 +154,7 @@ Los tres primeros fallos que aparezcan probablemente sean de datos censales
 (NIF no identificado, certificado no apoderado), no de la librería: los errores
 `4104`, `4107` y `4112` de `schemas/errores.properties` son justo eso.
 
-### 3. Backlog opcional, por si aparece necesidad
+### 2. Backlog opcional, por si aparece necesidad
 
 Nada de esto bloquea nada, y ninguno tiene issue abierto:
 

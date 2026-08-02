@@ -1,5 +1,5 @@
 {
-  "name": "verifactu",
+  "name": "@ramoncoroso/verifactu",
   "version": "1.0.0",
   "description": "TypeScript library for the Spanish AEAT Verifactu invoice reporting system",
   "keywords": [
@@ -22,6 +22,9 @@
     "url": "https://github.com/ramoncoroso/verifactu/issues"
   },
   "homepage": "https://github.com/ramoncoroso/verifactu#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "sideEffects": false,
   "type": "module",
   "main": "./dist/index.cjs",
@@ -40,8 +43,7 @@
     }
   },
   "files": [
-    "dist",
-    "schemas"
+    "dist"
   ],
   "engines": {
     "node": ">=18.0.0"

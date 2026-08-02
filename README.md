@@ -63,19 +63,23 @@ generado con un lector independiente. Ver [Conformidad](#conformidad-qué-se-ver
 ## Instalación
 
 ```bash
-npm install verifactu
+npm install @ramoncoroso/verifactu
 ```
 
-> El nombre `verifactu` está ocupado en npm por un tercero; hasta que se resuelva
-> ([#46](https://github.com/ramoncoroso/verifactu/issues/46)), instala desde el repositorio:
-> `npm install github:ramoncoroso/verifactu`.
+```typescript
+import { VerifactuClient } from '@ramoncoroso/verifactu';
+```
+
+> Va con alcance porque el nombre `verifactu` a secas lo tiene reservado un tercero en npm desde
+> 2024 —una versión de 223 bytes que nunca se ha tocado—. También puedes instalarla directamente
+> del repositorio: `npm install github:ramoncoroso/verifactu`.
 
 Requiere **Node.js ≥ 18**. ESM y CommonJS.
 
 ## Inicio rápido
 
 ```typescript
-import { VerifactuClient, InvoiceBuilder } from 'verifactu';
+import { VerifactuClient, InvoiceBuilder } from '@ramoncoroso/verifactu';
 
 const client = new VerifactuClient({
   environment: 'sandbox',
@@ -362,7 +366,7 @@ El contenido son **cuatro parámetros y solo cuatro** —NIF, número de serie, 
 La huella **no** va en el QR.
 
 ```typescript
-import { generateQrCode } from 'verifactu';
+import { generateQrCode } from '@ramoncoroso/verifactu';
 
 const r = await client.submitInvoice(factura);
 
@@ -383,7 +387,7 @@ electrónica de la AEAT»** o **«VERI\*FACTU»**.
 Para sistemas que **no** emiten facturas verificables, la URL de cotejo es otra:
 
 ```typescript
-import { buildQrUrl } from 'verifactu';
+import { buildQrUrl } from '@ramoncoroso/verifactu';
 const url = buildQrUrl(r.invoice, 'production', 'no-verifactu'); // …/ValidarQRNoVerifactu
 ```
 
@@ -401,7 +405,7 @@ import {
   HttpStatusError,
   SoapError,
   AeatError,
-} from 'verifactu';
+} from '@ramoncoroso/verifactu';
 
 try {
   await client.submitInvoice(factura);
@@ -487,7 +491,7 @@ Una contraseña incorrecta da un mensaje distinto, a propósito: no manda a nadi
 ## Validación
 
 ```typescript
-import { validateSpanishTaxId, validateInvoice, validateInvoiceBusinessRules } from 'verifactu';
+import { validateSpanishTaxId, validateInvoice, validateInvoiceBusinessRules } from '@ramoncoroso/verifactu';
 
 validateSpanishTaxId('Q2826000H'); // { valid: true, type: 'cif',  normalized: 'Q2826000H' }
 validateSpanishTaxId('M1234567L'); // { valid: true, type: 'nif' }  ← K/L/M son persona física
