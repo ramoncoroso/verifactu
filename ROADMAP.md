@@ -4,7 +4,19 @@ Mejoras planificadas para futuras versiones de Verifactu.
 
 ---
 
+## Prioridad actual: conformidad con la especificación de la AEAT
+
+Antes de cualquier mejora nueva hay que cerrar los 37 hallazgos de la auditoría, once de ellos
+bloqueantes. El detalle y el orden de ataque recomendado están en
+[`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md).
+
+---
+
 ## Requisito Pendiente: Configurar NPM_TOKEN
+
+> **Nota:** configurar el token no es suficiente. El pipeline de release apunta a la rama
+> `master` y la rama por defecto es `main`, por lo que `semantic-release` no llega a ejecutarse
+> (hallazgo VF-016).
 
 Para activar la publicación automática a npm, configura el secreto `NPM_TOKEN` en GitHub:
 

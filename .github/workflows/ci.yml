@@ -111,8 +111,11 @@ jobs:
           test -f dist/index.cjs
           test -f dist/index.d.ts
 
+  # La puerta que protege a quien instala la librería. Es de ALCANCE, no de umbral:
+  # "cero vulnerabilidades o falla". No hay nivel que bajar la próxima vez.
+  # Ver la issue VF-032 para el razonamiento completo.
   security:
-    name: Security Audit
+    name: Security · runtime
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -126,5 +129,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run npm audit
+      - name: Auditar el árbol de producción (tolerancia cero)
+        run: npm audit --omit=dev --audit-level=low
+
+  # Las devDependencies solo afectan a quien contribuye, no a quien consume la
+  # librería. Es informativo a propósito: `semantic-release` empaqueta el CLI de
+  # npm entero, cuyas vulnerabilidades no son corregibles desde este repositorio,
+  # y bloquear por ellas es lo que llevó a bajar el umbral en enero (44bce0b).
+  security-dev:
+    name: Security · desarrollo (informativo)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Auditar el árbol completo
         run: npm audit --audit-level=critical

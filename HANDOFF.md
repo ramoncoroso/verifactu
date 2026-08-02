@@ -2,9 +2,14 @@
 
 ## Resumen
 
-Librería TypeScript **production-ready** para el sistema Verifactu de la AEAT. Zero-dependencies, compatible con Node.js 18+, Deno y Bun.
+Librería TypeScript para el sistema Verifactu de la AEAT. Zero-dependencies, compatible con Node.js 18+, Deno y Bun.
 
-## Estado: Proyecto Completado ✅
+## Estado: estructura completa, conformidad pendiente ⚠️
+
+Todos los módulos están implementados y la suite pasa (691 tests), pero una auditoría contra la
+especificación de la AEAT ha encontrado que el QR, la huella y el XML no son conformes. Ver
+[`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md) antes de dar por buena cualquier
+integración.
 
 ### Módulos Implementados
 
