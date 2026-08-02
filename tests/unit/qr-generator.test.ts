@@ -64,12 +64,14 @@ describe('QR Generator', () => {
       expect(result.url).toContain('prewww2.aeat.es');
     });
 
-    it('should respect custom size', () => {
+    it('respeta el tamaño solicitado en el viewBox y en los atributos', () => {
       const invoice = createTestInvoice();
       const result = generateQrCode(invoice, 'production', { size: 300 });
-
+      // `toContain('300')` pasaba por casualidad: cualquier coordenada que
+      // contuviera «300» lo satisfacía.
+      expect(result.data).toContain('viewBox="0 0 300 300"');
+      expect(result.data).toContain('width="300"');
       expect(result.size).toBe(300);
-      expect(result.data).toContain('300');
     });
 
     it('should generate svg-data-uri format', () => {
@@ -222,12 +224,23 @@ describe('QR Generator', () => {
       expect(result.data).toContain('xmlns');
     });
 
-    it('should include rect elements for modules', () => {
+    it('emite un <path> con los módulos, no un <rect> por módulo', () => {
       const invoice = createTestInvoice();
       const result = generateQrCode(invoice);
+      // El aserto anterior era `toContain('<rect')`, que pasaba con el
+      // rectángulo del fondo aunque no se pintara ni un solo módulo. De hecho
+      // 21 de los 22 tests de este fichero pasaban con la imagen en blanco.
+      expect(result.data).toContain('<path fill=');
+      expect(result.data).toMatch(/<path fill="[^"]+" d="M[\d.]+ [\d.]+h/);
+      // Un solo <rect>: el del fondo.
+      expect(result.data.match(/<rect/g)).toHaveLength(1);
+    });
 
-      // QR codes are made of rectangles
-      expect(result.data).toContain('<rect');
+    it('con optimize: false vuelve a un <rect> por módulo', () => {
+      const invoice = createTestInvoice();
+      const result = generateQrCode(invoice, 'production', { optimize: false });
+      const modulosOscuros = result.modules.flat().filter(Boolean).length;
+      expect(result.data.match(/<rect/g)).toHaveLength(modulosOscuros + 1);
     });
   });
 });

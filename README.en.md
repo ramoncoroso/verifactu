@@ -20,18 +20,18 @@ TypeScript library for integrating with the **Spanish Tax Agency (AEAT) Verifact
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)]()
+[![Dependencies](https://img.shields.io/badge/dependencies-1%20(0%20transitive)-brightgreen.svg)]()
 
 **[Leer en Español](README.md)**
 
 ## Features
 
-- **Zero runtime dependencies** (only native Node.js APIs)
+- **Minimal dependency surface**: a single runtime dependency (`qrcode-generator`, MIT, no transitive deps), required by the ISO/IEC 18004 standard that art. 21 of Order HAC/1177/2024 mandates. Everything else uses native Node.js APIs
 - **Type-safe** with TypeScript strict mode
 - **Dual build**: ESM and CommonJS
 - **Integrity chain**: each record contains the hash of the previous one (blockchain-like)
 - **Complete validation**: NIF/CIF/NIE, schemas, AEAT business rules
-- **QR code generation**: SVG QR codes without dependencies
+- **Standards-compliant QR**: ISO/IEC 18004:2015, level M, SVG output sizeable in millimetres
 - **Sandbox and production support**: both AEAT environments
 - **Fluent API**: Builder pattern for intuitive invoice construction
 
