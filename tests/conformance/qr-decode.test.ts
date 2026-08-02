@@ -1,30 +1,34 @@
 /**
  * Nivel 3 de la pirámide: el QR se verifica decodificándolo.
  *
- * El art. 21 de la OM HAC/1177/2024 exige que el código siga ISO/IEC 18004:2015
- * con nivel M de corrección de errores. La única comprobación que verifica eso
- * es que un lector lo lea.
+ * El art. 21.1 de la OM HAC/1177/2024 exige ISO/IEC 18004:2015 con nivel M. La
+ * única comprobación que verifica eso es que un lector lo lea.
  *
- * Los tests marcados `it.fails` documentan VF-001: **pasan mientras el generador
- * siga roto**. Al sustituir el motor empezarán a fallar y habrá que quitar el
- * `.fails` en el mismo PR.
+ * Los `it.fails` que documentaban VF-001 se retiraron al sustituir el motor de
+ * codificación: ahora estos tests fijan el comportamiento correcto.
  */
 
 import { describe, expect, it } from 'vitest';
 
-import { generateQrCodeFromUrl } from '../../src/qr/generator.js';
+import { generateQrCode, generateQrCodeFromUrl } from '../../src/qr/generator.js';
+import { buildQrUrl, buildQrUrlFromParams } from '../../src/qr/url-builder.js';
 import { QR_CONTROL_MATRIX, QR_CONTROL_URL } from '../fixtures/qr-control.js';
-import { decodeAcrossConfigurations, decodeMatrix, matrixFromSvg } from '../helpers/qr.js';
+import { decodeAcrossConfigurations, decodeMatrix } from '../helpers/qr.js';
 
-/** URL de cotejo conforme al §6 de la especificación: exactamente 4 parámetros. */
-const URL_COTEJO =
-  'https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR' +
-  '?nif=89890001K&numserie=12345678%2FG33&fecha=01-01-2024&importe=241.40';
+/** URL de cotejo conforme al §6: exactamente 4 parámetros. */
+const URL_COTEJO = buildQrUrlFromParams(
+  { nif: '89890001K', numserie: '12345678/G33', fecha: '01-01-2024', importe: '241.40' },
+  'sandbox'
+);
+
+const FACTURA = {
+  issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name: 'Mi Empresa SL' },
+  id: { series: 'FC', number: '0001', issueDate: new Date('2026-08-02T10:00:00Z') },
+  totalAmount: 121,
+  hash: 'A'.repeat(64),
+} as unknown as Parameters<typeof generateQrCode>[0];
 
 describe('Control positivo · el método de prueba funciona', () => {
-  // Si esto falla, el que está roto es el rasterizador o `jsqr`, no el generador
-  // del repositorio. Sin este control, un fallo del test de abajo sería
-  // inconcluyente.
   it('decodifica un QR correcto y devuelve exactamente su contenido', () => {
     expect(decodeMatrix(QR_CONTROL_MATRIX)).toBe(QR_CONTROL_URL);
   });
@@ -36,41 +40,77 @@ describe('Control positivo · el método de prueba funciona', () => {
       }
     }
   });
+});
 
-  it('el control es de versión 7, el tamaño que corresponde a una URL de cotejo', () => {
-    expect(QR_CONTROL_MATRIX.length).toBe(45); // (7-1)*4+21
+describe('El QR generado es legible', () => {
+  it('decodifica exactamente a la URL de cotejo', () => {
+    const r = generateQrCodeFromUrl(URL_COTEJO, { errorCorrection: 'M' });
+    expect(decodeMatrix(r.modules)).toBe(URL_COTEJO);
+  });
+
+  it('decodifica en las veinte configuraciones de rasterizado', () => {
+    const r = generateQrCodeFromUrl(URL_COTEJO, { errorCorrection: 'M' });
+    for (const scale of [2, 3, 4, 6, 8]) {
+      for (const quietZone of [0, 2, 4, 8]) {
+        expect(decodeMatrix(r.modules, { scale, quietZone })).toBe(URL_COTEJO);
+      }
+    }
+  });
+
+  it('el QR de una factura decodifica a su propia URL', () => {
+    const r = generateQrCode(FACTURA, 'sandbox');
+    expect(decodeMatrix(r.modules)).toBe(buildQrUrl(FACTURA, 'sandbox'));
+  });
+
+  // El defecto anterior elegía la versión con tablas de capacidad de modo
+  // ALFANUMÉRICO para datos que van en modo byte, así que se quedaba corta:
+  // versión 5 donde hacen falta la 7.
+  it('elige la versión que corresponde al modo byte', () => {
+    const r = generateQrCodeFromUrl(URL_COTEJO, { errorCorrection: 'M' });
+    expect(r.version).toBe(7);
+    expect(r.modules.length).toBe(45); // (7-1)*4+21
+  });
+
+  it('el nivel de corrección por defecto es M, el que exige la norma', () => {
+    expect(generateQrCodeFromUrl(URL_COTEJO).errorCorrection).toBe('M');
+  });
+
+  it('a mayor corrección de errores, mayor versión', () => {
+    const l = generateQrCodeFromUrl(URL_COTEJO, { errorCorrection: 'L' }).version;
+    const h = generateQrCodeFromUrl(URL_COTEJO, { errorCorrection: 'H' }).version;
+    expect(h).toBeGreaterThan(l);
+  });
+
+  it('decodifica en el peor caso: numserie de 60 caracteres', () => {
+    const url = buildQrUrlFromParams(
+      {
+        nif: 'B12345678',
+        numserie: 'A'.repeat(60),
+        fecha: '31-12-2026',
+        importe: '999999999999.99',
+      },
+      'production'
+    );
+    const r = generateQrCodeFromUrl(url);
+    expect(decodeMatrix(r.modules)).toBe(url);
+    expect(r.version).toBeLessThanOrEqual(40);
+  });
+
+  it('decodifica con una serie que lleva espacios y barras', () => {
+    const url = buildQrUrlFromParams(
+      { nif: 'B12345678', numserie: 'FAC 2026/0042', fecha: '02-08-2026', importe: '121.00' },
+      'production'
+    );
+    expect(decodeAcrossConfigurations(generateQrCodeFromUrl(url).modules).decoded).toBe(url);
   });
 });
 
-describe('Generador del repositorio', () => {
-  // VF-001: `generateQrMatrix` no implementa Reed-Solomon, ni indicadores de modo
-  // y longitud, ni máscaras, ni información de formato. La salida no es un QR.
-  it.fails('el QR generado decodifica a la URL de cotejo [VF-001 abierto]', () => {
-    const svg = generateQrCodeFromUrl(URL_COTEJO, { errorCorrection: 'M' }).data;
-    expect(decodeMatrix(matrixFromSvg(svg))).toBe(URL_COTEJO);
-  });
-
-  it.fails('el QR generado decodifica en alguna configuración [VF-001 abierto]', () => {
-    const svg = generateQrCodeFromUrl(URL_COTEJO, { errorCorrection: 'M' }).data;
-    const { decoded } = decodeAcrossConfigurations(matrixFromSvg(svg));
+describe('El QR no lleva la huella · VF-013', () => {
+  it('el contenido tiene exactamente los cuatro parámetros de la norma', () => {
+    const decoded = decodeMatrix(generateQrCode(FACTURA, 'sandbox').modules);
     expect(decoded).not.toBeNull();
-  });
-
-  // Este no es `it.fails`: documenta el estado actual de forma afirmativa, para
-  // que quede constancia de que no decodifica en NINGUNA configuración y no solo
-  // en la de por defecto. Al corregir VF-001 habrá que invertirlo.
-  it('hoy no decodifica en ninguna de las 20 configuraciones probadas [VF-001 abierto]', () => {
-    const svg = generateQrCodeFromUrl(URL_COTEJO, { errorCorrection: 'M' }).data;
-    const { decoded, attempts } = decodeAcrossConfigurations(matrixFromSvg(svg));
-    expect(attempts).toBe(20);
-    expect(decoded).toBeNull();
-  });
-
-  // El tamaño de la matriz es un indicio independiente del defecto: las tablas de
-  // capacidad de `VERSION_CAPACITIES` son de modo alfanumérico, y la URL va en
-  // modo byte, así que la versión elegida se queda corta.
-  it.fails('elige la versión que corresponde al modo byte [VF-001 abierto]', () => {
-    const svg = generateQrCodeFromUrl(URL_COTEJO, { errorCorrection: 'M' }).data;
-    expect(matrixFromSvg(svg).length).toBe(45); // versión 7, la que usa el ejemplo oficial
+    const params = new URL(decoded!).searchParams;
+    expect([...params.keys()]).toEqual(['nif', 'numserie', 'fecha', 'importe']);
+    expect(decoded).not.toContain('huella');
   });
 });

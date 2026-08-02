@@ -1,9 +1,20 @@
 /**
- * QR Code Generator for Verifactu
+ * Generación del código QR de la factura.
  *
- * Zero-dependency QR code generator optimized for Verifactu verification URLs.
- * Generates QR codes in SVG format.
+ * El art. 21.1 de la OM HAC/1177/2024 exige que el código siga **ISO/IEC
+ * 18004:2015** con nivel **M** de corrección de errores, y que se imprima entre
+ * 30×30 y 40×40 milímetros.
+ *
+ * La codificación la hace `qrcode-generator` (MIT, sin dependencias transitivas),
+ * el port canónico del encoder de Kazuhiko Arase. La implementación anterior era
+ * un placeholder —lo decía su propio comentario— que dibujaba los patrones de
+ * localización y rellenaba el resto con los bits crudos de la cadena más un hash
+ * de 32 bits: sin Reed-Solomon, sin indicadores de modo y longitud, sin máscaras
+ * y sin información de formato. Verificado: no la decodificaba ningún lector en
+ * ninguna de 664 configuraciones probadas.
  */
+
+import qrcode from 'qrcode-generator';
 
 import type { Invoice } from '../models/invoice.js';
 import type { Environment } from '../client/endpoints.js';
@@ -31,6 +42,19 @@ export interface QrOptions {
   background?: string;
   /** Quiet zone (margin) in modules */
   margin?: number;
+  /**
+   * Unidad de `size`. `'px'` por defecto.
+   *
+   * La norma exige un tamaño impreso de 30 a 40 mm, y una zona de silencio de al
+   * menos 2 mm (recomendado 6). Con `'mm'` el SVG sale dimensionado en
+   * milímetros y se comprueba que la zona de silencio resultante sea conforme.
+   */
+  unit?: 'px' | 'mm';
+  /**
+   * Emite un único `<path>` fusionando tiradas horizontales en vez de un `<rect>`
+   * por módulo. Reduce el SVG en torno a un 85 %. Por defecto, activado.
+   */
+  optimize?: boolean;
 }
 
 /**
@@ -45,6 +69,18 @@ export interface QrResult {
   url: string;
   /** Size in pixels */
   size: number;
+  /**
+   * Matriz de módulos; `true` = módulo oscuro.
+   *
+   * Se expone para poder **decodificar** la salida en los tests sin parsear el
+   * SVG. Sin ella, verificar que el QR es legible exigía reconstruir la matriz
+   * con expresiones regulares.
+   */
+  readonly modules: readonly (readonly boolean[])[];
+  /** Versión QR resultante (1-40). Para Veri*Factu, típicamente 7-11. */
+  readonly version: number;
+  /** Nivel de corrección de errores efectivo. */
+  readonly errorCorrection: 'L' | 'M' | 'Q' | 'H';
 }
 
 /**
@@ -57,336 +93,162 @@ const DEFAULT_OPTIONS: Required<QrOptions> = {
   foreground: '#000000',
   background: '#FFFFFF',
   margin: 4,
+  unit: 'px',
+  optimize: true,
 };
 
-/**
- * QR Code Version capacities (alphanumeric mode, different EC levels)
- * Version 1-10 capacities for alphanumeric mode
- */
-const VERSION_CAPACITIES: Record<string, number[]> = {
-  L: [25, 47, 77, 114, 154, 195, 224, 279, 335, 395],
-  M: [20, 38, 61, 90, 122, 154, 178, 221, 262, 311],
-  Q: [16, 29, 47, 67, 87, 108, 125, 157, 189, 221],
-  H: [10, 20, 35, 50, 64, 84, 93, 122, 143, 174],
-};
+/** Caracteres admitidos en el contenido del QR. */
+const ASCII_IMPRIMIBLE = /^[\x20-\x7E]*$/;
 
 /**
- * Determine required QR version for data length
+ * Codifica el contenido en una matriz de módulos.
+ *
+ * Dos cosas que no son obvias y que hay que respetar:
+ *
+ *  - **Modo byte explícito.** La URL de cotejo lleva minúsculas, `:`, `?` y `&`,
+ *    que están fuera del alfabeto alfanumérico de QR. Las tablas de capacidad de
+ *    la implementación anterior eran de modo alfanumérico, así que elegía una
+ *    versión demasiado pequeña: versión 5 donde hacen falta la 7.
+ *  - **La validación ASCII va ANTES de codificar.** El `stringToBytes` por
+ *    defecto de `qrcode-generator` es latin-1, no UTF-8, así que un carácter
+ *    fuera de ASCII se codificaría mal en silencio. Y el §4 de la especificación
+ *    del QR lo prohíbe de todos modos.
  */
-function getRequiredVersion(dataLength: number, ecLevel: 'L' | 'M' | 'Q' | 'H'): number {
-  const capacities = VERSION_CAPACITIES[ecLevel];
-  if (!capacities) {
-    throw new QrGenerationError('Invalid error correction level');
+function buildMatrix(data: string, ec: 'L' | 'M' | 'Q' | 'H'): boolean[][] {
+  if (!ASCII_IMPRIMIBLE.test(data)) {
+    throw new QrGenerationError(
+      'El contenido del QR solo puede contener caracteres ASCII del 32 al 126 ' +
+        '(especificación del código QR, apartado 4)'
+    );
   }
-
-  for (let version = 1; version <= capacities.length; version++) {
-    const capacity = capacities[version - 1];
-    if (capacity !== undefined && dataLength <= capacity) {
-      return version;
-    }
+  let qr;
+  try {
+    qr = qrcode(0, ec); // 0 = versión automática
+    qr.addData(data, 'Byte');
+    qr.make();
+  } catch (error) {
+    throw new QrDataTooLargeError(data.length, 2331);
   }
-
-  throw new QrDataTooLargeError(dataLength, capacities[capacities.length - 1] ?? 0);
-}
-
-/**
- * Generate a simple QR code matrix using a basic algorithm
- * This is a simplified implementation for demonstration purposes
- */
-function generateQrMatrix(data: string, version: number): boolean[][] {
-  // QR code size = (version - 1) * 4 + 21
-  const size = (version - 1) * 4 + 21;
-  const matrix: boolean[][] = Array.from({ length: size }, () =>
-    Array.from({ length: size }, () => false)
+  const n = qr.getModuleCount();
+  return Array.from({ length: n }, (_, row) =>
+    Array.from({ length: n }, (_, col) => qr.isDark(row, col))
   );
+}
 
-  // Add finder patterns (top-left, top-right, bottom-left)
-  addFinderPattern(matrix, 0, 0);
-  addFinderPattern(matrix, size - 7, 0);
-  addFinderPattern(matrix, 0, size - 7);
+function matrixToSvg(matrix: boolean[][], options: Required<QrOptions>): string {
+  const modules = matrix.length;
+  const total = modules + options.margin * 2;
+  const moduleSize = options.size / total;
+  const unidad = options.unit === 'mm' ? 'mm' : '';
 
-  // Add timing patterns
-  addTimingPatterns(matrix, size);
-
-  // Add alignment pattern for version >= 2
-  if (version >= 2) {
-    const alignPos = getAlignmentPosition(version);
-    if (alignPos !== null) {
-      addAlignmentPattern(matrix, alignPos, alignPos);
+  if (options.unit === 'mm') {
+    // §3 de la especificación: mínimo 2 mm de zona de silencio, recomendado 6.
+    const zona = options.margin * moduleSize;
+    if (zona < 2) {
+      throw new QrGenerationError(
+        `Zona de silencio de ${zona.toFixed(2)} mm: la especificación exige al menos 2 mm. ` +
+          `Aumenta el tamaño o el margen.`
+      );
     }
   }
 
-  // Encode data into remaining cells
-  // This is a simplified encoding that fills the QR with a pattern based on data hash
-  const dataHash = simpleHash(data);
-  fillDataArea(matrix, size, dataHash, data);
+  const cuerpo = options.optimize
+    ? pathDeModulos(matrix, options.margin, moduleSize, options.foreground)
+    : rectsDeModulos(matrix, options.margin, moduleSize, options.foreground);
 
-  return matrix;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${options.size} ${options.size}" ` +
+    `width="${options.size}${unidad}" height="${options.size}${unidad}" shape-rendering="crispEdges">` +
+    `<rect width="100%" height="100%" fill="${options.background}"/>` +
+    cuerpo +
+    '</svg>'
+  );
 }
 
-/**
- * Add a finder pattern at the given position
- */
-function addFinderPattern(matrix: boolean[][], row: number, col: number): void {
-  // Outer black square (7x7)
-  for (let i = 0; i < 7; i++) {
-    for (let j = 0; j < 7; j++) {
-      // Black border
-      const isOuter = i === 0 || i === 6 || j === 0 || j === 6;
-      // Black center (3x3)
-      const isCenter = i >= 2 && i <= 4 && j >= 2 && j <= 4;
-
-      if (matrix[row + i] !== undefined) {
-        matrix[row + i]![col + j] = isOuter || isCenter;
-      }
-    }
-  }
-
-  // Add separator (white border)
-  for (let i = 0; i < 8; i++) {
-    if (row + 7 < matrix.length && matrix[row + 7]) {
-      matrix[row + 7]![col + i] = false;
-    }
-    if (row + i < matrix.length && col + 7 < (matrix[0]?.length ?? 0) && matrix[row + i]) {
-      matrix[row + i]![col + 7] = false;
-    }
-  }
-}
-
-/**
- * Add timing patterns
- */
-function addTimingPatterns(matrix: boolean[][], size: number): void {
-  for (let i = 8; i < size - 8; i++) {
-    const value = i % 2 === 0;
-    const row6 = matrix[6];
-    const rowI = matrix[i];
-    if (row6) row6[i] = value;
-    if (rowI) rowI[6] = value;
-  }
-}
-
-/**
- * Get alignment pattern position for a version
- */
-function getAlignmentPosition(version: number): number | null {
-  if (version < 2) return null;
-  // Simplified: position is approximately at size - 7
-  const size = (version - 1) * 4 + 21;
-  return size - 7 - 2; // Offset from bottom-right finder
-}
-
-/**
- * Add an alignment pattern
- */
-function addAlignmentPattern(matrix: boolean[][], row: number, col: number): void {
-  // Check if we're overlapping with finder pattern
-  if (row < 9 && col < 9) return;
-  if (row < 9 && col > matrix.length - 10) return;
-  if (row > matrix.length - 10 && col < 9) return;
-
-  // 5x5 alignment pattern
-  for (let i = -2; i <= 2; i++) {
-    for (let j = -2; j <= 2; j++) {
-      const r = row + i;
-      const c = col + j;
-      const matrixRow = matrix[r];
-      if (r >= 0 && r < matrix.length && matrixRow) {
-        const isOuter = Math.abs(i) === 2 || Math.abs(j) === 2;
-        const isCenter = i === 0 && j === 0;
-        matrixRow[c] = isOuter || isCenter;
-      }
-    }
-  }
-}
-
-/**
- * Simple hash function for data encoding
- */
-function simpleHash(data: string): number {
-  let hash = 0;
-  for (let i = 0; i < data.length; i++) {
-    const char = data.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  return Math.abs(hash);
-}
-
-/**
- * Fill the data area with encoded data pattern
- */
-function fillDataArea(matrix: boolean[][], size: number, hash: number, data: string): void {
-  // Convert data to binary representation
-  const bits: boolean[] = [];
-  for (let i = 0; i < data.length; i++) {
-    const charCode = data.charCodeAt(i);
-    for (let j = 7; j >= 0; j--) {
-      bits.push(((charCode >> j) & 1) === 1);
-    }
-  }
-
-  // Add hash bits for additional entropy
-  for (let j = 31; j >= 0; j--) {
-    bits.push(((hash >> j) & 1) === 1);
-  }
-
-  // Fill data modules (avoiding finder patterns, timing patterns, etc.)
-  let bitIndex = 0;
-  let up = true; // Direction of filling
-
-  // Start from bottom-right, moving left in columns of 2
-  for (let col = size - 1; col >= 0; col -= 2) {
-    // Skip timing pattern column
-    if (col === 6) col = 5;
-
-    const rows = up
-      ? Array.from({ length: size }, (_, i) => size - 1 - i)
-      : Array.from({ length: size }, (_, i) => i);
-
-    for (const row of rows) {
-      for (let c = 0; c < 2; c++) {
-        const actualCol = col - c;
-        if (actualCol < 0) continue;
-
-        // Skip reserved areas (finder patterns, timing, alignment)
-        if (isReservedModule(row, actualCol, size)) continue;
-
-        // Set module based on data bits
-        const currentRow = matrix[row];
-        if (bitIndex < bits.length && currentRow) {
-          currentRow[actualCol] = bits[bitIndex % bits.length] ?? false;
-          bitIndex++;
-        } else if (currentRow) {
-          // Fill remaining with pattern
-          currentRow[actualCol] = ((row + actualCol) % 2 === 0);
-        }
-      }
-    }
-
-    up = !up;
-  }
-}
-
-/**
- * Check if a module position is reserved (finder, timing, etc.)
- */
-function isReservedModule(row: number, col: number, size: number): boolean {
-  // Top-left finder pattern + separator
-  if (row < 9 && col < 9) return true;
-  // Top-right finder pattern + separator
-  if (row < 9 && col >= size - 8) return true;
-  // Bottom-left finder pattern + separator
-  if (row >= size - 8 && col < 9) return true;
-  // Timing patterns
-  if (row === 6 || col === 6) return true;
-
-  return false;
-}
-
-/**
- * Convert matrix to SVG
- */
-function matrixToSvg(
+/** Un `<path>` con las tiradas horizontales fusionadas. */
+function pathDeModulos(
   matrix: boolean[][],
-  options: Required<QrOptions>
+  margin: number,
+  moduleSize: number,
+  fill: string
 ): string {
-  const matrixSize = matrix.length;
-  const totalSize = matrixSize + options.margin * 2;
-  const moduleSize = options.size / totalSize;
-
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${options.size} ${options.size}" width="${options.size}" height="${options.size}">`;
-
-  // Background
-  svg += `<rect width="100%" height="100%" fill="${options.background}"/>`;
-
-  // Modules
-  for (let row = 0; row < matrixSize; row++) {
-    for (let col = 0; col < matrixSize; col++) {
-      if (matrix[row]?.[col]) {
-        const x = (col + options.margin) * moduleSize;
-        const y = (row + options.margin) * moduleSize;
-        svg += `<rect x="${x}" y="${y}" width="${moduleSize}" height="${moduleSize}" fill="${options.foreground}"/>`;
+  const trozos: string[] = [];
+  for (let row = 0; row < matrix.length; row++) {
+    const fila = matrix[row]!;
+    let col = 0;
+    while (col < fila.length) {
+      if (!fila[col]) {
+        col++;
+        continue;
       }
+      let ancho = 1;
+      while (col + ancho < fila.length && fila[col + ancho]) ancho++;
+      const x = (col + margin) * moduleSize;
+      const y = (row + margin) * moduleSize;
+      trozos.push(`M${red(x)} ${red(y)}h${red(ancho * moduleSize)}v${red(moduleSize)}h-${red(ancho * moduleSize)}z`);
+      col += ancho;
     }
   }
+  return trozos.length === 0 ? '' : `<path fill="${fill}" d="${trozos.join('')}"/>`;
+}
 
-  svg += '</svg>';
+/** Un `<rect>` por módulo. Se conserva para quien dependa de esa forma. */
+function rectsDeModulos(
+  matrix: boolean[][],
+  margin: number,
+  moduleSize: number,
+  fill: string
+): string {
+  let svg = '';
+  for (let row = 0; row < matrix.length; row++) {
+    for (let col = 0; col < matrix[row]!.length; col++) {
+      if (!matrix[row]?.[col]) continue;
+      const x = (col + margin) * moduleSize;
+      const y = (row + margin) * moduleSize;
+      svg += `<rect x="${red(x)}" y="${red(y)}" width="${red(moduleSize)}" height="${red(moduleSize)}" fill="${fill}"/>`;
+    }
+  }
   return svg;
 }
 
-/**
- * Generate a QR code for an invoice
- */
+/** Recorta la coma flotante a 4 decimales. */
+function red(n: number): number {
+  return Math.round(n * 1e4) / 1e4;
+}
+
+/** Construye el resultado a partir de la matriz. Único punto que arma `QrResult`. */
+function buildResult(url: string, matrix: boolean[][], opts: Required<QrOptions>): QrResult {
+  const svg = matrixToSvg(matrix, opts);
+  const data =
+    opts.format === 'svg-data-uri'
+      ? `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`
+      : svg;
+  return {
+    data,
+    format: opts.format,
+    url,
+    size: opts.size,
+    modules: matrix,
+    version: (matrix.length - 21) / 4 + 1,
+    errorCorrection: opts.errorCorrection,
+  };
+}
+
+/** Genera el QR de cotejo de una factura. */
 export function generateQrCode(
   invoice: Invoice & { hash: string },
   environment: Environment = 'production',
   options: QrOptions = {}
 ): QrResult {
   const opts: Required<QrOptions> = { ...DEFAULT_OPTIONS, ...options };
-
-  // Build the URL to encode
   const url = buildQrUrl(invoice, environment);
-
-  // Determine QR version needed
-  const version = getRequiredVersion(url.length, opts.errorCorrection);
-
-  // Generate QR matrix
-  const matrix = generateQrMatrix(url, version);
-
-  // Convert to SVG
-  const svg = matrixToSvg(matrix, opts);
-
-  // Format output
-  let data: string;
-  if (opts.format === 'svg-data-uri') {
-    const base64 = Buffer.from(svg).toString('base64');
-    data = `data:image/svg+xml;base64,${base64}`;
-  } else {
-    data = svg;
-  }
-
-  return {
-    data,
-    format: opts.format,
-    url,
-    size: opts.size,
-  };
+  return buildResult(url, buildMatrix(url, opts.errorCorrection), opts);
 }
 
-/**
- * Generate QR code from raw URL
- */
-export function generateQrCodeFromUrl(
-  url: string,
-  options: QrOptions = {}
-): QrResult {
+/** Genera un QR a partir de una URL ya construida. */
+export function generateQrCodeFromUrl(url: string, options: QrOptions = {}): QrResult {
   const opts: Required<QrOptions> = { ...DEFAULT_OPTIONS, ...options };
-
-  // Determine QR version needed
-  const version = getRequiredVersion(url.length, opts.errorCorrection);
-
-  // Generate QR matrix
-  const matrix = generateQrMatrix(url, version);
-
-  // Convert to SVG
-  const svg = matrixToSvg(matrix, opts);
-
-  // Format output
-  let data: string;
-  if (opts.format === 'svg-data-uri') {
-    const base64 = Buffer.from(svg).toString('base64');
-    data = `data:image/svg+xml;base64,${base64}`;
-  } else {
-    data = svg;
-  }
-
-  return {
-    data,
-    format: opts.format,
-    url,
-    size: opts.size,
-  };
+  return buildResult(url, buildMatrix(url, opts.errorCorrection), opts);
 }
 
 /**

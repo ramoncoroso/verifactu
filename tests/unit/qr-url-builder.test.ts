@@ -1,219 +1,153 @@
 /**
- * Tests for QR URL Builder
+ * URL de cotejo.
+ *
+ * La conformidad con la especificación se comprueba en
+ * `tests/conformance/qr-decode.test.ts`. Aquí van los casos de borde de la
+ * construcción y la validación.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+
 import {
-  buildQrUrlParams,
+  assertValidQrParams,
   buildQrUrl,
-  buildQrData,
+  buildQrUrlFromParams,
+  buildQrUrlParams,
   validateQrParams,
+  type QrUrlParams,
 } from '../../src/qr/url-builder.js';
-import type { Invoice } from '../../src/models/invoice.js';
-import { InvoiceType } from '../../src/models/enums.js';
 
-describe('QR URL Builder', () => {
-  const createTestInvoice = (hash: string = 'testhash123'): Invoice & { hash: string } => ({
-    operationType: 'A',
-    invoiceType: InvoiceType.STANDARD,
-    id: {
-      series: 'A',
-      number: '001',
-      issueDate: new Date('2024-01-15'),
-    },
-    issuer: {
-      taxId: { type: 'NIF', value: 'B12345678' },
-      name: 'Test Company SL',
-    },
-    operationRegimes: ['01'],
-    taxBreakdown: {
-      vatBreakdowns: [
-        {
-          vatRate: 21,
-          taxBase: 100,
-          vatAmount: 21,
-        },
-      ],
-    },
-    totalAmount: 121.50,
-    hash,
-  });
+const VALIDOS: QrUrlParams = {
+  nif: 'B12345678',
+  numserie: 'FC0001',
+  fecha: '02-08-2026',
+  importe: '121.00',
+};
 
-  describe('buildQrUrlParams', () => {
-    it('should build correct parameters', () => {
-      const invoice = createTestInvoice();
-      const params = buildQrUrlParams(invoice);
+const FACTURA = {
+  issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name: 'Mi Empresa SL' },
+  id: { series: 'FC', number: '0001', issueDate: new Date('2026-08-02T10:00:00Z') },
+  totalAmount: 121,
+  hash: 'A'.repeat(64),
+} as unknown as Parameters<typeof buildQrUrlParams>[0];
 
-      expect(params.nif).toBe('B12345678');
-      expect(params.numserie).toBe('A001');
-      expect(params.fecha).toBe('15-01-2024');
-      expect(params.importe).toBe('121.50');
-      expect(params.huella).toBe('testhash123');
-    });
-
-    it('should handle invoice without series', () => {
-      const invoice = createTestInvoice();
-      invoice.id.series = undefined;
-      const params = buildQrUrlParams(invoice);
-
-      expect(params.numserie).toBe('001');
-    });
-
-    it('should format date as DD-MM-YYYY', () => {
-      const invoice = createTestInvoice();
-      invoice.id.issueDate = new Date('2024-12-05');
-      const params = buildQrUrlParams(invoice);
-
-      expect(params.fecha).toBe('05-12-2024');
-    });
-
-    it('should format amount with 2 decimals', () => {
-      const invoice = createTestInvoice();
-      invoice.totalAmount = 100;
-      const params = buildQrUrlParams(invoice);
-
-      expect(params.importe).toBe('100.00');
-    });
-
-    it('should handle negative amounts', () => {
-      const invoice = createTestInvoice();
-      invoice.totalAmount = -50.25;
-      const params = buildQrUrlParams(invoice);
-
-      expect(params.importe).toBe('-50.25');
+describe('buildQrUrlParams', () => {
+  it('produce los cuatro parámetros, y solo esos', () => {
+    expect(buildQrUrlParams(FACTURA)).toEqual({
+      nif: 'B12345678',
+      numserie: 'FC0001',
+      fecha: '02-08-2026',
+      importe: '121.00',
     });
   });
+});
 
-  describe('buildQrUrl', () => {
-    it('should build production URL by default', () => {
-      const invoice = createTestInvoice();
-      const url = buildQrUrl(invoice, 'production');
-
-      expect(url).toContain('agenciatributaria.gob.es');
-      expect(url).toContain('ValidarQR');
-      expect(url).toContain('nif=B12345678');
-      expect(url).toContain('numserie=A001');
-      expect(url).toContain('fecha=15-01-2024');
-      expect(url).toContain('importe=121.50');
-    });
-
-    it('should build sandbox URL when specified', () => {
-      const invoice = createTestInvoice();
-      const url = buildQrUrl(invoice, 'sandbox');
-
-      expect(url).toContain('prewww2.aeat.es');
-    });
-
-    it('should URL-encode parameters', () => {
-      const invoice = createTestInvoice('hash+with+special=chars');
-      const url = buildQrUrl(invoice);
-
-      // URLSearchParams encodes + and =
-      expect(url).toContain('huella=hash%2Bwith%2Bspecial%3Dchars');
-    });
+describe('buildQrUrlFromParams', () => {
+  it('usa la URL del entorno', () => {
+    expect(buildQrUrlFromParams(VALIDOS, 'production')).toContain(
+      'www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?'
+    );
+    expect(buildQrUrlFromParams(VALIDOS, 'sandbox')).toContain('prewww2.aeat.es');
   });
 
-  describe('buildQrData', () => {
-    it('should return same result as buildQrUrl', () => {
-      const invoice = createTestInvoice();
-      const qrData = buildQrData(invoice, 'production');
-      const url = buildQrUrl(invoice, 'production');
-
-      expect(qrData).toBe(url);
-    });
+  // §5.2: los sistemas que no emiten facturas verificables usan otro servicio.
+  it('usa ValidarQRNoVerifactu para sistemas no verificables', () => {
+    const url = buildQrUrlFromParams(VALIDOS, 'sandbox', 'no-verifactu');
+    expect(url).toContain('/ValidarQRNoVerifactu?');
   });
 
-  describe('validateQrParams', () => {
-    it('should validate correct parameters', () => {
-      const result = validateQrParams({
-        nif: 'B12345678',
-        numserie: 'A001',
-        fecha: '15-01-2024',
-        importe: '121.50',
-        huella: 'hash123456789012345678901234',
-      });
+  // El §4.1 de la especificación adjunta la implementación de referencia de la
+  // AEAT, `java.net.URLEncoder.encode`, que codifica el espacio como `+`. Estos
+  // valores se contrastaron contra una JVM real.
+  it.each([
+    ['FC-2026/0042', 'FC-2026%2F0042', 'barra'],
+    ['FAC 2026 0042', 'FAC+2026+0042', 'espacios → "+", no %20'],
+    ['A&B/2026', 'A%26B%2F2026', 'ampersand'],
+    ['SERIE?X=1', 'SERIE%3FX%3D1', 'interrogación e igual'],
+    ['A+B', 'A%2BB', 'un "+" literal va como %2B'],
+    ['100%FAC', '100%25FAC', 'porcentaje'],
+    ["O'BRIEN-01", 'O%27BRIEN-01', 'apóstrofo'],
+    ['F(2026)', 'F%282026%29', 'paréntesis'],
+    ['A~B', 'A%7EB', 'tilde'],
+    ['S*01', 'S*01', 'asterisco NO se codifica'],
+    ['A.B_C-D', 'A.B_C-D', 'punto, guion bajo y guion no se codifican'],
+  ])('numserie %s → %s (%s)', (numserie, esperado) => {
+    const url = buildQrUrlFromParams({ ...VALIDOS, numserie }, 'production');
+    expect(url).toContain(`numserie=${esperado}`);
+    // Ida y vuelta: el valor debe recuperarse intacto.
+    expect(new URL(url).searchParams.get('numserie')).toBe(numserie);
+  });
 
-      expect(result.valid).toBe(true);
-      expect(result.errors).toEqual([]);
-    });
+  it('valida antes de construir', () => {
+    expect(() => buildQrUrlFromParams({ ...VALIDOS, nif: 'B123' })).toThrow();
+  });
+});
 
-    it('should reject invalid NIF length', () => {
-      const result = validateQrParams({
-        nif: 'B123',
-        numserie: 'A001',
-        fecha: '15-01-2024',
-        importe: '121.50',
-        huella: 'hash123456789012345678901234',
-      });
+describe('validateQrParams', () => {
+  it('acepta un juego válido', () => {
+    expect(validateQrParams(VALIDOS)).toEqual({ valid: true, errors: [] });
+  });
 
-      expect(result.valid).toBe(false);
-      expect(result.errors).toContain('Invalid NIF: must be 9 characters');
-    });
+  // §4: «las cadenas de texto solo pueden contener caracteres ASCII con códigos
+  // del 32 al 126». §10 lo tipifica como error 2003.
+  it.each([
+    ['SERIE-Ñ', 'eñe'],
+    ['CAFÉ-01', 'vocal acentuada'],
+    ['A€1', 'euro'],
+    ['A\tB', 'tabulador'],
+    ['A\nB', 'salto de línea'],
+  ])('rechaza numserie %s (%s) con el código 2003', (numserie) => {
+    const r = validateQrParams({ ...VALIDOS, numserie });
+    expect(r.valid).toBe(false);
+    expect(r.errors.join()).toContain('2003');
+  });
 
-    it('should reject empty invoice number', () => {
-      const result = validateQrParams({
-        nif: 'B12345678',
-        numserie: '',
-        fecha: '15-01-2024',
-        importe: '121.50',
-        huella: 'hash123456789012345678901234',
-      });
+  it('rechaza numserie vacío y de más de 60 caracteres', () => {
+    expect(validateQrParams({ ...VALIDOS, numserie: '' }).valid).toBe(false);
+    expect(validateQrParams({ ...VALIDOS, numserie: 'A'.repeat(61) }).valid).toBe(false);
+    expect(validateQrParams({ ...VALIDOS, numserie: 'A'.repeat(60) }).valid).toBe(true);
+  });
 
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('invoice number'))).toBe(true);
-    });
+  it('rechaza NIF que no sean 9 alfanuméricos en mayúsculas', () => {
+    for (const nif of ['B123', 'b12345678', 'B1234567890', '']) {
+      expect(validateQrParams({ ...VALIDOS, nif }).valid).toBe(false);
+    }
+  });
 
-    it('should reject invoice number too long', () => {
-      const result = validateQrParams({
-        nif: 'B12345678',
-        numserie: 'A'.repeat(61),
-        fecha: '15-01-2024',
-        importe: '121.50',
-        huella: 'hash123456789012345678901234',
-      });
+  // El patrón por sí solo aceptaba 99-99-9999.
+  it('rechaza fechas que encajan en el patrón pero no existen', () => {
+    for (const fecha of ['99-99-9999', '32-01-2026', '29-02-2025', '00-01-2026']) {
+      const r = validateQrParams({ ...VALIDOS, fecha });
+      expect(r.valid, fecha).toBe(false);
+      expect(r.errors.join()).toContain('2004');
+    }
+    expect(validateQrParams({ ...VALIDOS, fecha: '29-02-2024' }).valid).toBe(true); // bisiesto
+  });
 
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('max 60'))).toBe(true);
-    });
+  // Los ejemplos del §8 usan `importe=241.4`, con UN decimal: exigir dos
+  // rechazaría el ejemplo canónico de la propia AEAT.
+  it('acepta importes con uno o dos decimales', () => {
+    expect(validateQrParams({ ...VALIDOS, importe: '241.4' }).valid).toBe(true);
+    expect(validateQrParams({ ...VALIDOS, importe: '241.40' }).valid).toBe(true);
+    expect(validateQrParams({ ...VALIDOS, importe: '241' }).valid).toBe(true);
+  });
 
-    it('should reject invalid date format', () => {
-      const result = validateQrParams({
-        nif: 'B12345678',
-        numserie: 'A001',
-        fecha: '2024-01-15', // Wrong format (ISO instead of DD-MM-YYYY)
-        importe: '121.50',
-        huella: 'hash123456789012345678901234',
-      });
+  it('rechaza importes de más de 12 dígitos enteros', () => {
+    expect(validateQrParams({ ...VALIDOS, importe: '1234567890123.00' }).valid).toBe(false);
+    expect(validateQrParams({ ...VALIDOS, importe: '999999999999.99' }).valid).toBe(true);
+  });
 
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('DD-MM-YYYY'))).toBe(true);
-    });
+  it('assertValidQrParams enumera todos los problemas', () => {
+    expect(() => assertValidQrParams({ nif: 'X', numserie: '', fecha: 'x', importe: 'y' })).toThrow(
+      /2001[\s\S]*2003[\s\S]*2004[\s\S]*2006/
+    );
+  });
+});
 
-    it('should reject invalid amount format', () => {
-      const result = validateQrParams({
-        nif: 'B12345678',
-        numserie: 'A001',
-        fecha: '15-01-2024',
-        importe: '121', // Missing decimals
-        huella: 'hash123456789012345678901234',
-      });
-
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('decimal'))).toBe(true);
-    });
-
-
-    it('should collect multiple errors', () => {
-      const result = validateQrParams({
-        nif: 'B',
-        numserie: '',
-        fecha: 'invalid',
-        importe: 'invalid',
-        huella: 'x',
-      });
-
-      expect(result.valid).toBe(false);
-      expect(result.errors.length).toBeGreaterThan(1);
-    });
+describe('buildQrUrl', () => {
+  it('la URL no contiene la huella', () => {
+    const url = buildQrUrl(FACTURA, 'production');
+    expect(url).not.toContain('huella');
+    expect([...new URL(url).searchParams.keys()]).toHaveLength(4);
   });
 });

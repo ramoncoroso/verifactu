@@ -22,16 +22,16 @@ Librería TypeScript para integrar con el sistema **Verifactu de la AEAT** (Agen
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)]()
+[![Dependencies](https://img.shields.io/badge/dependencies-1%20(0%20transitive)-brightgreen.svg)]()
 
 ## Características
 
-- **Zero-dependencies** en runtime (solo APIs nativas de Node.js)
+- **Superficie de dependencias mínima**: una única dependencia en runtime (`qrcode-generator`, MIT, sin transitivas), exigida por la norma ISO/IEC 18004 que impone el art. 21 de la Orden HAC/1177/2024. Todo lo demás usa APIs nativas de Node.js
 - **Type-safe** con TypeScript strict mode
 - **Dual build**: ESM y CommonJS
 - **Cadena de integridad**: cada registro contiene el hash del anterior (blockchain-like)
 - **Validación completa**: NIF/CIF/NIE, esquemas, reglas de negocio AEAT
-- **Generación de QR**: códigos QR en SVG sin dependencias
+- **Generación de QR conforme**: ISO/IEC 18004:2015, nivel M, salida SVG dimensionable en milímetros
 - **Soporte sandbox y producción**: ambos entornos de AEAT
 - **API fluida**: Builder pattern para construcción intuitiva de facturas
 

@@ -134,19 +134,32 @@ export const MAX_RECORDS_PER_SUBMISSION = 1000;
  */
 export const INITIAL_WAIT_SECONDS = 60;
 
+/** Sistema que expide la factura, que determina el servicio de cotejo. */
+export type QrUrlKind = 'verifactu' | 'no-verifactu';
+
 /**
- * URL de cotejo del QR.
+ * URLs de cotejo del QR. Son **cuatro**: dos entornos por dos tipos de sistema.
  *
- * Ojo: la especificación define **cuatro**, no dos. Los sistemas que no emiten
- * facturas verificables usan `ValidarQRNoVerifactu`, que la librería no modela
- * todavía.
+ * Los sistemas que no emiten facturas verificables usan `ValidarQRNoVerifactu`
+ * (§5.2 de la especificación del QR).
  */
 export const QR_VERIFICATION_URLS = {
   production: 'https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR',
   sandbox: 'https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR',
 } as const;
 
-/** URL de cotejo del QR para un entorno. */
-export function getQrVerificationUrl(environment: Environment): string {
-  return QR_VERIFICATION_URLS[environment];
+/** URLs de cotejo para sistemas que **no** emiten facturas verificables. */
+export const QR_VERIFICATION_URLS_NO_VERIFACTU = {
+  production: 'https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQRNoVerifactu',
+  sandbox: 'https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQRNoVerifactu',
+} as const;
+
+/** URL de cotejo del QR para un entorno y tipo de sistema. */
+export function getQrVerificationUrl(
+  environment: Environment,
+  kind: QrUrlKind = 'verifactu'
+): string {
+  return kind === 'no-verifactu'
+    ? QR_VERIFICATION_URLS_NO_VERIFACTU[environment]
+    : QR_VERIFICATION_URLS[environment];
 }
