@@ -12,23 +12,48 @@ bloqueantes. El detalle y el orden de ataque recomendado están en
 
 ---
 
-## Requisito Pendiente: Configurar NPM_TOKEN
+## ⛔ NO configures NPM_TOKEN todavía
 
-> **Nota:** configurar el token no es suficiente. El pipeline de release apunta a la rama
-> `master` y la rama por defecto es `main`, por lo que `semantic-release` no llega a ejecutarse
-> (hallazgo VF-016).
+> Esta sección decía lo contrario: pedía configurar `NPM_TOKEN` como la tarea que
+> desbloqueaba las publicaciones automáticas. **Era una trampa**, y está invertida a
+> propósito.
 
-Para activar la publicación automática a npm, configura el secreto `NPM_TOKEN` en GitHub:
+El pipeline de release dispara en cada push a `main`. Hasta ahora no publicaba nada
+porque fallaba en `verifyConditions` con `EINVALIDNPMTOKEN`, antes siquiera de analizar
+los commits. Eso es un atasco, no un seguro: **configurar el token era exactamente lo
+que lo desatascaría**, y lo que saldría publicado es una librería que emite QR que
+ningún lector decodifica y huellas en Base64, versionada como «parche seguro» porque
+las correcciones son commits `fix:`.
 
-1. Genera un token en [npmjs.com](https://www.npmjs.com/) > Access Tokens > Generate New Token (Automation)
-2. Ve a GitHub > Settings > Secrets and variables > Actions
-3. Añade un nuevo secreto llamado `NPM_TOKEN` con el valor del token
+Hay dos cerrojos, y cada uno exige un acto deliberado y visible:
 
-Una vez configurado, cada push a `master` con commits convencionales disparará automáticamente:
-- Bump de versión según tipo de commit
-- Generación de changelog
-- Publicación a npm
-- Creación de GitHub Release
+1. **`.github/workflows/release.yml`** — el job se salta salvo que exista la variable
+   de repositorio `RELEASE_ENABLED` con valor `'true'`.
+2. **`.releaserc.json`** — `"npmPublish": false`.
+
+### Qué tiene que ocurrir antes de abrirlos
+
+- [ ] El job **`Conformidad AEAT`** en verde **sin ningún test marcado `it.fails`**.
+      Mientras quede uno, hay un bloqueante abierto.
+- [ ] Resuelto el nombre del paquete: `verifactu` pertenece a un tercero en npm desde
+      enero de 2024. Hay que decidir entre un scope propio (`@ramoncoroso/verifactu`) o
+      una disputa de nombres. Ninguna fase del plan posee esta decisión.
+- [ ] Decidido si los esquemas de la AEAT y el `xmldsig-core-schema.xsd` del W3C deben
+      viajar dentro del tarball: hoy `files: ["dist", "schemas"]` los redistribuye en un
+      paquete que se anuncia MIT, y solo los necesita el helper de tests.
+- [ ] Verificado contra el entorno de preproducción de la AEAT que un registro es
+      aceptado. Requiere un certificado, y su tramitación tiene plazo: conviene iniciarla
+      cuanto antes porque no consume horas de ingeniería y bloquea el final.
+
+### Cuando llegue el momento
+
+1. Genera un token de automatización en [npmjs.com](https://www.npmjs.com/) y añádelo como
+   secreto `NPM_TOKEN` en *Settings → Secrets and variables → Actions*.
+2. Pon `"npmPublish": true` en `.releaserc.json`.
+3. Crea la variable de repositorio `RELEASE_ENABLED` con valor `true`.
+
+El primer release será un **`2.0.0`**: desaparecen `sha256`, `formatXmlDate`,
+`SOAP_ACTIONS`, `RecordChain.processInvoice` y varios tipos más de la API pública.
 
 ---
 
