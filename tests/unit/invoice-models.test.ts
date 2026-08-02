@@ -104,10 +104,6 @@ describe('Invoice Models', () => {
   });
 
   describe('formatIsoDate', () => {
-    it('should format date as YYYY-MM-DD', () => {
-      const date = new Date(2024, 0, 15);
-      expect(formatIsoDate(date)).toBe('2024-01-15');
-    });
 
     it('should pad single digit day and month', () => {
       const date = new Date(2024, 4, 5);

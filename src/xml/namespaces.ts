@@ -1,5 +1,10 @@
 /**
- * XML Namespaces for Verifactu
+ * Espacios de nombres de Veri*Factu.
+ *
+ * Las URI se comprueban contra el `targetNamespace` de los XSD vendorizados en
+ * `tests/conformance/namespaces.test.ts`. Hasta esa comprobación, `SUM` contenía
+ * `SusministroLR.xsd` —con una `s` de más— y el test que lo cubría usaba
+ * `toContain('agenciatributaria.gob.es')`, que la dejaba pasar.
  */
 
 /**
@@ -14,9 +19,16 @@ export const Namespaces = {
   XSD: 'http://www.w3.org/2001/XMLSchema',
   /** XML Schema Instance namespace */
   XSI: 'http://www.w3.org/2001/XMLSchema-instance',
-  /** Verifactu SuministroLR namespace (main namespace for invoice records) */
-  SUM: 'https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SusministroLR.xsd',
-  /** Verifactu SuministroInformacion namespace */
+  /**
+   * SuministroLR.xsd. Solo tres elementos viven aquí: `RegFactuSistemaFacturacion`,
+   * `Cabecera` y `RegistroFactura`. Todo lo demás —incluido el CONTENIDO de la
+   * cabecera— es de {@link Namespaces.SUM_INFO}.
+   */
+  SUM: 'https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd',
+  /**
+   * SuministroInformacion.xsd. El contenido de `Cabecera`, `RegistroAlta`,
+   * `RegistroAnulacion` y todos sus descendientes.
+   */
   SUM_INFO: 'https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd',
   /** Digital signature namespace */
   DS: 'http://www.w3.org/2000/09/xmldsig#',
@@ -30,8 +42,8 @@ export const NsPrefix = {
   SOAP_ENC: 'soapenc',
   XSD: 'xsd',
   XSI: 'xsi',
-  SUM: 'sum',
-  SUM_INFO: 'sumi',
+  SUM: 'sfLR',
+  SUM_INFO: 'sf',
   DS: 'ds',
 } as const;
 

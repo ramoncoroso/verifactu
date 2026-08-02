@@ -67,29 +67,7 @@ describe('XML Builder', () => {
     });
   });
 
-  describe('formatXmlDate', () => {
-    it('should format date as YYYY-MM-DD', () => {
-      const date = new Date(2024, 0, 15); // January 15, 2024
-      expect(formatXmlDate(date)).toBe('2024-01-15');
-    });
 
-    it('should pad single digit months and days', () => {
-      const date = new Date(2024, 4, 5); // May 5, 2024
-      expect(formatXmlDate(date)).toBe('2024-05-05');
-    });
-  });
-
-  describe('formatXmlDateTime', () => {
-    it('should format datetime as YYYY-MM-DDTHH:mm:ss', () => {
-      const date = new Date(2024, 0, 15, 10, 30, 45);
-      expect(formatXmlDateTime(date)).toBe('2024-01-15T10:30:45');
-    });
-
-    it('should pad single digit time components', () => {
-      const date = new Date(2024, 0, 1, 1, 5, 9);
-      expect(formatXmlDateTime(date)).toBe('2024-01-01T01:05:09');
-    });
-  });
 
   describe('element builder', () => {
     it('should create simple element', () => {

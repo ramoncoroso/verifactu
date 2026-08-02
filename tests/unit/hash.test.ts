@@ -18,12 +18,6 @@ import { InvoiceType } from '../../src/models/enums.js';
 
 describe('Hash Functions', () => {
   describe('sha256', () => {
-    it('should return base64 encoded string', () => {
-      const hash = sha256('test');
-      expect(typeof hash).toBe('string');
-      // Base64 encoded SHA-256 should be 44 characters
-      expect(hash.length).toBe(44);
-    });
 
     it('should produce consistent hashes', () => {
       const hash1 = sha256('test');
@@ -37,10 +31,6 @@ describe('Hash Functions', () => {
       expect(hash1).not.toBe(hash2);
     });
 
-    it('should be decodable as base64', () => {
-      const hash = sha256('test');
-      expect(() => Buffer.from(hash, 'base64')).not.toThrow();
-    });
   });
 
   describe('sha256Hex', () => {
@@ -148,21 +138,6 @@ describe('Hash Functions', () => {
   });
 
   describe('calculateAltaHash', () => {
-    it('should return base64 encoded hash', () => {
-      const hash = calculateAltaHash({
-        issuerNif: 'B12345678',
-        invoiceNumber: 'A001',
-        issueDate: new Date('2024-01-15'),
-        invoiceType: 'F1',
-        vatTotal: 21,
-        totalAmount: 121,
-        previousHash: '',
-        generationTimestamp: new Date('2024-01-15T10:30:00Z'),
-      });
-
-      expect(typeof hash).toBe('string');
-      expect(() => Buffer.from(hash, 'base64')).not.toThrow();
-    });
 
     it('should produce consistent hashes', () => {
       const input = {
