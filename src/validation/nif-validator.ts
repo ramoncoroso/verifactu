@@ -34,14 +34,35 @@ const NIF_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE';
 const CIF_CONTROL_LETTERS = 'JABCDEFGHI';
 
 /**
- * CIF entity type prefixes
- * - Letter-ending: K, L, M (for entities that must use letter control)
- * - Digit-ending: A, B, C, D, E, F, G, H (for entities that may use digit control)
- * - Either: P, Q, R, S, N, W (can use either)
+ * Letras iniciales de NIF de persona física.
+ *
+ * RD 1065/2007 (RGAT), art. 19.2 y 20.2: la `L` corresponde a los españoles
+ * residentes en el extranjero, la `K` a los menores de 14 años residentes en
+ * España y la `M` a los extranjeros sin NIE. **No son CIF**: llevan «un carácter
+ * de verificación alfabético» calculado por módulo 23, igual que el DNI, y se
+ * validaban con el algoritmo Luhn del CIF, que rechaza los correctos y acepta
+ * los erróneos. Los NIF `M` son destinatarios reales de factura.
  */
-const CIF_LETTER_ONLY_PREFIXES = ['K', 'L', 'M'];
-const CIF_DIGIT_ONLY_PREFIXES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-const CIF_VALID_PREFIXES = [...CIF_LETTER_ONLY_PREFIXES, ...CIF_DIGIT_ONLY_PREFIXES, 'P', 'Q', 'R', 'S', 'N', 'W', 'J', 'U', 'V'];
+const NIF_PERSONA_FISICA_PREFIXES = ['K', 'L', 'M'];
+
+/**
+ * Los 17 prefijos de CIF que enumera la Orden EHA/451/2008, art. 2.a.
+ *
+ * **La Orden no dice de qué tipo es el carácter de control.** Su literal es solo
+ * «c) Un carácter de control». El reparto «dígito para A/B/E/H, letra para
+ * N/P/Q/R/S/W» que circula —Wikipedia incluida— es práctica administrativa sin
+ * respaldo normativo, y las dos implementaciones de referencia discrepan entre
+ * sí. `python-stdnum` lo documenta en su propio código: «there seems to be
+ * conflicting information on which organisation types should have which type of
+ * check digit (alphabetic or numeric) so we support either here».
+ *
+ * Endurecerlo produce falsos negativos sobre identificadores reales —`G2802964C`
+ * se rechazaba—, así que se admiten ambos controles.
+ */
+const CIF_VALID_PREFIXES = [
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J',
+  'N', 'P', 'Q', 'R', 'S', 'U', 'V', 'W',
+];
 
 /**
  * Normalize a NIF string (uppercase, remove spaces and hyphens)
@@ -117,6 +138,31 @@ function validateNie(normalized: string): NifValidationResult {
 }
 
 /**
+ * NIF de persona física con letra inicial `K`, `L` o `M`.
+ *
+ * Formato: letra + 7 dígitos + letra de control por módulo 23 sobre los dígitos.
+ */
+function validateNifPersonaFisica(normalized: string): NifValidationResult {
+  const match = /^([KLM])(\d{7})([A-Z])$/.exec(normalized);
+  if (!match) {
+    return {
+      valid: false,
+      error: 'NIF K/L/M must be a letter, 7 digits and a control letter',
+    };
+  }
+
+  const digits = match[2]!;
+  const letter = match[3]!;
+  const expected = NIF_LETTERS[parseInt(digits, 10) % 23];
+
+  if (letter !== expected) {
+    return { valid: false, error: `Invalid control letter: expected ${expected ?? 'unknown'}` };
+  }
+
+  return { valid: true, type: 'nif', normalized };
+}
+
+/**
  * Calculate CIF control digit/letter
  */
 function calculateCifControl(_prefix: string, digits: string): { digit: number; letter: string } {
@@ -169,31 +215,11 @@ function validateCif(normalized: string): NifValidationResult {
   // Calculate expected control
   const { digit: expectedDigit, letter: expectedLetter } = calculateCifControl(prefix, digits);
 
-  // Determine if control should be letter or digit
+  // Se admite cualquiera de los dos controles: ver la nota de
+  // CIF_VALID_PREFIXES sobre por qué el reparto por letra inicial no es firme.
   const isDigit = /^\d$/.test(control);
-  const isLetter = /^[A-Z]$/.test(control);
 
-  // Entities that must use letter
-  if (CIF_LETTER_ONLY_PREFIXES.includes(prefix)) {
-    if (!isLetter || control !== expectedLetter) {
-      return { valid: false, error: `Invalid control letter: expected ${expectedLetter}` };
-    }
-    return { valid: true, type: 'cif', normalized };
-  }
-
-  // Entities that must use digit
-  if (CIF_DIGIT_ONLY_PREFIXES.includes(prefix)) {
-    if (!isDigit || parseInt(control, 10) !== expectedDigit) {
-      return { valid: false, error: `Invalid control digit: expected ${expectedDigit}` };
-    }
-    return { valid: true, type: 'cif', normalized };
-  }
-
-  // Entities that can use either
-  if (isDigit && parseInt(control, 10) === expectedDigit) {
-    return { valid: true, type: 'cif', normalized };
-  }
-  if (isLetter && control === expectedLetter) {
+  if (isDigit ? parseInt(control, 10) === expectedDigit : control === expectedLetter) {
     return { valid: true, type: 'cif', normalized };
   }
 
@@ -227,6 +253,11 @@ export function validateSpanishTaxId(taxId: string): NifValidationResult {
   // NIE: starts with X, Y, or Z
   if (/^[XYZ]/.test(normalized)) {
     return validateNie(normalized);
+  }
+
+  // NIF de persona física con letra inicial: K, L, M.
+  if (NIF_PERSONA_FISICA_PREFIXES.includes(firstChar)) {
+    return validateNifPersonaFisica(normalized);
   }
 
   // CIF: starts with a letter (but not X, Y, Z)

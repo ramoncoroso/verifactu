@@ -213,50 +213,21 @@ describe('NIF Validator', () => {
     });
   });
 
-  describe('CIF letter-only prefixes', () => {
-    it('should validate CIF with K prefix (letter control)', () => {
-      // K requires letter control - control for 1234567 is D
-      const result = validateSpanishTaxId('K1234567D');
-      expect(result.valid).toBe(true);
-      expect(result.type).toBe('cif');
-    });
-
-    it('should validate CIF with L prefix (letter control)', () => {
-      const result = validateSpanishTaxId('L1234567D');
-      expect(result.valid).toBe(true);
-      expect(result.type).toBe('cif');
-    });
-
-    it('should validate CIF with M prefix (letter control)', () => {
-      const result = validateSpanishTaxId('M1234567D');
-      expect(result.valid).toBe(true);
-      expect(result.type).toBe('cif');
-    });
-
-    it('should reject K prefix with digit control', () => {
-      const result = validateSpanishTaxId('K12345674');
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('Invalid control letter');
-    });
-
-    it('should reject K prefix with wrong letter control', () => {
-      const result = validateSpanishTaxId('K1234567A');
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('Invalid control letter');
-    });
-  });
+  // El bloque «CIF letter-only prefixes» se ha ELIMINADO, no actualizado: daba
+  // por buenos K1234567D, L1234567D y M1234567D, que son NIF de persona física
+  // validados con el algoritmo del CIF. La batería auditable con la fuente
+  // normativa está en tests/conformance/nif.test.ts.
 
   describe('CIF digit-only prefixes', () => {
-    it('should reject A prefix with letter control', () => {
-      const result = validateSpanishTaxId('A1234567D');
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('Invalid control digit');
-    });
+    // «should reject A prefix with letter control» se ha ELIMINADO: la Orden
+    // EHA/451/2008 no reparte el tipo de control por letra inicial, y exigir
+    // dígito a la A produce falsos negativos que ninguna implementación de
+    // referencia comete. Ver tests/conformance/nif.test.ts.
 
     it('should reject B prefix with wrong digit control', () => {
       const result = validateSpanishTaxId('B12345671');
       expect(result.valid).toBe(false);
-      expect(result.error).toContain('Invalid control digit');
+      expect(result.error).toContain('Invalid control character');
     });
   });
 
