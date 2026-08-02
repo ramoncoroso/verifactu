@@ -44,7 +44,7 @@ describe('VerifactuClient', () => {
     developerTaxId: 'B12345678',
     version: '1.0.0',
     installationNumber: '001',
-    systemType: 'V',
+    systemType: 'S',
   };
 
   const createConfig = (): VerifactuClientConfig => ({
@@ -60,6 +60,8 @@ describe('VerifactuClient', () => {
   const createValidInvoice = (): Invoice => ({
     operationType: 'A',
     invoiceType: 'F1',
+    // Obligatoria en el XSD: sin ella el documento no valida.
+    description: 'Servicios de prueba',
     id: {
       series: 'A',
       number: '001',

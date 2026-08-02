@@ -55,6 +55,14 @@ export interface InvoiceLine {
  * Verifactu record hash chain reference
  */
 export interface ChainReference {
+  /**
+   * NIF del emisor del registro anterior.
+   *
+   * `EncadenamientoFacturaAnteriorType` declara `IDEmisorFactura` como
+   * obligatorio y no se emitía. Es opcional aquí por compatibilidad: si falta se
+   * usa el del emisor actual, que es el caso normal.
+   */
+  readonly previousIssuerNif?: string;
   /** Previous record hash (Huella) */
   readonly previousHash: string;
   /** Previous invoice date */

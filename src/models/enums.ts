@@ -68,10 +68,6 @@ export const OperationRegime = {
   10: '10',
   /** Operaciones de arrendamiento de local de negocio */
   11: '11',
-  /** Operaciones de arrendamiento de local de negocio sujetas a retención */
-  12: '12',
-  /** Operaciones de arrendamiento de local de negocio no sujetas a retención */
-  13: '13',
   /** Factura con IVA pendiente de devengo en certificaciones de obra cuyo destinatario sea una Administración Pública */
   14: '14',
   /** Factura con IVA pendiente de devengo en operaciones de tracto sucesivo */
@@ -80,6 +76,12 @@ export const OperationRegime = {
   17: '17',
   /** Operaciones en régimen simplificado */
   19: '19',
+  /** Valor del XSD; la AEAT no publica descripción */
+  18: '18',
+  /** Valor del XSD; la AEAT no publica descripción */
+  20: '20',
+  /** Valor del XSD; la AEAT no publica descripción */
+  21: '21',
 } as const;
 
 export type OperationRegime = (typeof OperationRegime)[keyof typeof OperationRegime];
@@ -101,6 +103,10 @@ export const ExemptionCause = {
   E5: 'E5',
   /** Exenta por otros */
   E6: 'E6',
+  /** Exenta (valor del XSD; la AEAT no publica su descripción) */
+  E7: 'E7',
+  /** Exenta (valor del XSD; la AEAT no publica su descripción) */
+  E8: 'E8',
 } as const;
 
 export type ExemptionCause = (typeof ExemptionCause)[keyof typeof ExemptionCause];
@@ -109,34 +115,75 @@ export type ExemptionCause = (typeof ExemptionCause)[keyof typeof ExemptionCause
  * Non-subject causes (Operaciones no sujetas)
  * L9 - Clave de operaciones no sujetas
  */
+export const CalificacionOperacion = {
+  /** Sujeta y no exenta, sin inversión del sujeto pasivo. */
+  S1: 'S1',
+  /** Sujeta y no exenta, con inversión del sujeto pasivo. */
+  S2: 'S2',
+  /** No sujeta por el artículo 7, 14 u otros. */
+  N1: 'N1',
+  /** No sujeta por reglas de localización. */
+  N2: 'N2',
+} as const;
+
+export type CalificacionOperacion =
+  (typeof CalificacionOperacion)[keyof typeof CalificacionOperacion];
+
+/**
+ * @deprecated Los valores `OT` y `RL` **no existen** en ningún XSD de la AEAT.
+ * La no sujeción se expresa con {@link CalificacionOperacion} `N1` o `N2`.
+ */
 export const NonSubjectCause = {
-  /** No sujeta por el artículo 7 */
-  OT: 'OT',
-  /** No sujeta por reglas de localización */
-  RL: 'RL',
+  /** @deprecated Usa `CalificacionOperacion.N1`. */
+  OT: 'N1',
+  /** @deprecated Usa `CalificacionOperacion.N2`. */
+  RL: 'N2',
 } as const;
 
 export type NonSubjectCause = (typeof NonSubjectCause)[keyof typeof NonSubjectCause];
+
+/** Impuesto de la línea de desglose. */
+export const Impuesto = {
+  /** IVA */
+  IVA: '01',
+  /** IPSI de Ceuta y Melilla */
+  IPSI: '02',
+  /** IGIC */
+  IGIC: '03',
+  /** Otros */
+  OTROS: '05',
+} as const;
+
+export type Impuesto = (typeof Impuesto)[keyof typeof Impuesto];
+
+/** Tipo de huella. Solo hay uno. */
+export const TipoHuella = { SHA256: '01' } as const;
+export type TipoHuella = (typeof TipoHuella)[keyof typeof TipoHuella];
+
+/** Valores S/N del XSD. */
+export const SiNo = { S: 'S', N: 'N' } as const;
+export type SiNo = (typeof SiNo)[keyof typeof SiNo];
+
 
 /**
  * Tax ID types
  * L6 - Tipo de identificación fiscal
  */
 export const TaxIdType = {
-  /** NIF */
+  /** NIF español. No es un valor del enumerado del XSD: selecciona el elemento <NIF>. */
   NIF: 'NIF',
-  /** Pasaporte */
-  Passport: '02',
-  /** Documento oficial expedido por el país o territorio de residencia */
-  OfficialDocument: '03',
-  /** Certificado de residencia fiscal */
-  ResidenceCertificate: '04',
-  /** Otro documento probatorio */
-  Other: '05',
-  /** No censado */
-  NotRegistered: '06',
-  /** Menor de 14 años */
-  Under14: '07',
+  /** NIF-IVA (operador intracomunitario). */
+  VatNumber: '02',
+  /** Pasaporte. */
+  Passport: '03',
+  /** Documento oficial de identificación expedido por el país de residencia. */
+  IdInCountryOfResidence: '04',
+  /** Certificado de residencia fiscal. */
+  ResidenceCertificate: '05',
+  /** Otro documento probatorio. */
+  Other: '06',
+  /** No censado. */
+  NotRegistered: '07',
 } as const;
 
 export type TaxIdType = (typeof TaxIdType)[keyof typeof TaxIdType];

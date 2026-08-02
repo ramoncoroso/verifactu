@@ -24,7 +24,7 @@ const SOFTWARE: SoftwareInfo = {
   developerTaxId: 'B99999999',
   version: '1.0.0',
   installationNumber: '001',
-  systemType: 'V',
+  systemType: 'S',
 };
 
 function makeClient(): VerifactuClient {

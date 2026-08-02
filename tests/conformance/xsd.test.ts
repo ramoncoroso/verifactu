@@ -24,7 +24,7 @@ const SOFTWARE: SoftwareInfo = {
   developerTaxId: 'B99999999',
   version: '1.0.0',
   installationNumber: '001',
-  systemType: 'V',
+  systemType: 'S',
 };
 
 /** Cliente real, sin tocar el disco: la ruta de Buffer no parsea el PKCS#12. */
@@ -198,22 +198,100 @@ describe('El helper de validación funciona', () => {
 });
 
 describe('XML generado por el cliente', () => {
-  // VF-006, VF-024, VF-025, VF-033, VF-034: el registro no sigue el XSD.
-  it.fails('un alta mínima valida contra SuministroLR.xsd [VF-006 abierto]', () => {
+  it('un alta mínima valida contra SuministroLR.xsd', () => {
     const result = validateSuministro(buildBody(makeInvoice()));
     expect(result.valid, formatXsdErrors(result)).toBe(true);
   });
 
-  // Documenta el estado actual de forma afirmativa: qué error concreto da hoy.
-  // Al corregir VF-006 este test hay que borrarlo, no actualizarlo.
-  it('hoy falla ya en el primer elemento, por namespace [VF-006 abierto]', () => {
-    const result = validateSuministro(buildBody(makeInvoice()));
-    expect(result.valid).toBe(false);
-    expect(result.errors.join('\n')).toContain('ObligadoEmision');
+  it('una factura con exentas y no sujetas valida, y las emite', () => {
+    const body = buildBody(
+      makeInvoice({
+        taxBreakdown: {
+          vatBreakdowns: [{ taxBase: 100, vatRate: 21, vatAmount: 21 }],
+          exemptBreakdowns: [{ taxBase: 50, cause: 'E1' }],
+          nonSubjectBreakdowns: [{ amount: 30, cause: 'N1' }],
+        },
+        totalAmount: 201,
+      } as Partial<Invoice>)
+    );
+    const result = validateSuministro(body);
+    expect(result.valid, formatXsdErrors(result)).toBe(true);
+    // Se descartaban en silencio: el Desglose no justificaba el ImporteTotal.
+    expect(body.match(/DetalleDesglose>/g)).toHaveLength(6); // 3 aperturas + 3 cierres
+    expect(body).toContain('OperacionExenta>E1<');
+    expect(body).toContain('CalificacionOperacion>N1<');
+    // En una línea exenta no se emite CuotaRepercutida.
+    expect(body.match(/CuotaRepercutida/g)).toHaveLength(2);
+  });
+
+  it('el recargo de equivalencia llega al XML y a CuotaTotal', () => {
+    const body = buildBody(
+      makeInvoice({
+        taxBreakdown: {
+          vatBreakdowns: [
+            {
+              taxBase: 100,
+              vatRate: 21,
+              vatAmount: 21,
+              equivalenceSurchargeRate: 5.2,
+              equivalenceSurchargeAmount: 5.2,
+            },
+          ],
+        },
+        totalAmount: 126.2,
+      } as Partial<Invoice>)
+    );
+    expect(validateSuministro(body).valid).toBe(true);
+    expect(body).toContain('TipoRecargoEquivalencia>5.20<');
+    expect(body).toContain('CuotaRecargoEquivalencia>5.20<');
+    // 21 + 5.20, no 21: lo confirma el código de error 2006 de la AEAT.
+    expect(body).toContain('CuotaTotal>26.20<');
+  });
+
+  it('emite IDVersion y TipoHuella, que faltaban', () => {
+    const body = buildBody(makeInvoice());
+    expect(body).toContain('IDVersion>1.0<');
+    expect(body).toContain('TipoHuella>01<');
+  });
+
+  it('el primer registro emite solo PrimerRegistro, y sin valor N', () => {
+    const body = buildBody(makeInvoice());
+    expect(body).toContain('PrimerRegistro>S<');
+    expect(body).not.toContain('PrimerRegistro>N<');
+    expect(body).not.toContain('RegistroAnterior');
+  });
+
+  it('usa BaseImponibleOimporteNoSujeto, con «i» minúscula', () => {
+    const body = buildBody(makeInvoice());
+    expect(body).toContain('BaseImponibleOimporteNoSujeto>');
+    expect(body).not.toContain('BaseImponibleOImporteNoSujeto>');
+  });
+
+  it('una anulación valida y usa los campos con sufijo Anulada', () => {
+    const client = makeClient();
+    const cancelacion = {
+      operationType: 'AN',
+      issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name: 'Mi Empresa SL' },
+      invoiceId: { series: 'FC', number: '0001', issueDate: new Date('2026-08-02T10:00:00Z') },
+      hash: 'B'.repeat(64),
+    };
+    const envelope = (
+      client as unknown as {
+        buildAnulacionSoapBody(c: unknown, t: Date, f: boolean): string;
+      }
+    ).buildAnulacionSoapBody(cancelacion, new Date('2026-08-02T12:00:00Z'), true);
+    const body = extractSoapBody(envelope);
+    const result = validateSuministro(body);
+    expect(result.valid, formatXsdErrors(result)).toBe(true);
+    expect(body).toContain('IDEmisorFacturaAnulada>');
+    expect(body).toContain('NumSerieFacturaAnulada>');
+    // Va en el mismo mensaje que las altas: no existe AnulaFactuSistemaFacturacion.
+    expect(body).toContain('RegFactuSistemaFacturacion');
+    expect(body).not.toContain('AnulaFactuSistemaFacturacion');
   });
 });
 
-describe('Escapado de caracteres · VF-005', () => {
+describe('Escapado de caracteres', () => {
   const HOSTILES = [
     'Pepe & Hijos, S.L.',
     'A<B>C',
@@ -223,23 +301,38 @@ describe('Escapado de caracteres · VF-005', () => {
   ];
 
   // Un `toContain` no distingue «escapado bien» de «no escapado». La prueba real
-  // es que el documento parsee y el valor se recupere intacto.
-  it.fails.each(HOSTILES)('la razón social %s produce XML bien formado [VF-005 abierto]', (name) => {
-    const body = buildBody(makeInvoice({ issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name } } as Partial<Invoice>));
-    // Si no está escapado, el documento ni siquiera parsea.
+  // es que el documento valide y que el valor se recupere intacto.
+  it.each(HOSTILES)('la razón social %s produce XML válido', (name) => {
+    const body = buildBody(
+      makeInvoice({
+        issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name },
+      } as Partial<Invoice>)
+    );
     const result = validateSuministro(body);
-    expect(result.errors.join('\n')).not.toContain('mal formado');
+    expect(result.valid, formatXsdErrors(result)).toBe(true);
+    expect(body).not.toContain('xmlParseEntityRef');
   });
 
-  // Inyección deliberada: el caso que demuestra que no es solo un problema de
-  // caracteres sueltos.
-  it.fails('una descripción con etiquetas no inyecta elementos nuevos [VF-005 abierto]', () => {
+  it('una descripción con etiquetas no inyecta elementos nuevos', () => {
     const body = buildBody(
       makeInvoice({
         description:
-          'Servicio</sum:DescripcionOperacion><sum:Macrodato>S</sum:Macrodato><sum:DescripcionOperacion>x',
+          'Servicio</sf:DescripcionOperacion><sf:Macrodato>S</sf:Macrodato><sf:DescripcionOperacion>x',
       })
     );
-    expect(body).not.toContain('<sum:Macrodato>');
+    expect(validateSuministro(body).valid).toBe(true);
+    // El elemento inyectado no existe; el texto viaja escapado dentro del suyo.
+    expect(body).not.toContain('<sf:Macrodato>');
+    expect(body).toContain('&lt;/sf:DescripcionOperacion&gt;');
+  });
+
+  it('un & en la razón social se escapa y se recupera intacto', () => {
+    const body = buildBody(
+      makeInvoice({
+        issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name: 'Pepe & Hijos' },
+      } as Partial<Invoice>)
+    );
+    expect(body).toContain('Pepe &amp; Hijos');
+    expect(body).not.toMatch(/>Pepe & Hijos</);
   });
 });
