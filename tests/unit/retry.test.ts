@@ -382,8 +382,37 @@ describe('Retry Utility', () => {
       });
 
       expect(result).toBe('success');
-      // ConnectionError uses 1000ms retryAfterMs by default
-      expect(onRetry).toHaveBeenCalledWith(1, connError, 1000);
+      // Antes, ConnectionError llevaba retryAfterMs: 1000 fijo, y withRetry lo
+      // prioriza sobre el cálculo exponencial: el backoff era código muerto para
+      // todos los errores que lanza el cliente SOAP. Ahora se respeta el
+      // initialDelayMs configurado.
+      expect(onRetry).toHaveBeenCalledWith(1, connError, 500);
+    });
+
+    it('el retardo crece de forma exponencial entre intentos', async () => {
+      const operation = vi
+        .fn()
+        .mockRejectedValue(new NetworkError('Fail'));
+      const retardos: number[] = [];
+
+      await withRetry(operation, {
+        maxRetries: 3,
+        initialDelayMs: 10,
+        jitterFactor: 0,
+        onRetry: (_a, _e, delayMs) => retardos.push(delayMs),
+      }).catch(() => undefined);
+
+      expect(retardos).toEqual([10, 20, 40]);
+    });
+
+    it('un SOAPFault de servidor se reintenta; uno de cliente no', async () => {
+      const servidor = SoapError.fromFault('soapenv:Server', 'Servicio no disponible');
+      const cliente = SoapError.fromFault('soapenv:Client', 'Codigo[4104].Mensaje incorrecto');
+      // La AEAT lo instruye expresamente en el §5.1 de su documentación.
+      expect(servidor.isRetryable()).toBe(true);
+      expect(cliente.isRetryable()).toBe(false);
+      // Y el código de la AEAT se extrae del faultstring.
+      expect(cliente.aeatCode).toBe('4104');
     });
   });
 

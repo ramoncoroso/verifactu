@@ -81,13 +81,19 @@ export class ConcurrencyLimiter {
       return operation();
     }
 
-    // Wait for a slot if at capacity
+    // El hueco se reserva ANTES de ceder el control, no después de despertar.
+    //
+    // Comprobar, esperar y luego incrementar no es atómico: entre que
+    // `processQueue` despierta a un encolado y este reanuda —una microtarea al
+    // final de la cola— `activeCount` está infravalorado, y una llamada nueva que
+    // ya estuviera en la cola de microtareas se queda con el hueco. Resultado:
+    // `activeCount` podía superar `maxConcurrency`.
     if (this.activeCount >= this.maxConcurrency) {
+      // `waitForSlot` resuelve con el hueco YA contabilizado por `processQueue`.
       await this.waitForSlot();
+    } else {
+      this.activeCount++;
     }
-
-    // Acquire slot
-    this.activeCount++;
 
     try {
       return await operation();
@@ -124,6 +130,9 @@ export class ConcurrencyLimiter {
       const next = this.queue.shift();
       if (next) {
         clearTimeout(next.timeoutId);
+        // Se contabiliza aquí, mientras todavía se tiene el control, para que
+        // nadie pueda colarse entre el `resolve` y la reanudación del encolado.
+        this.activeCount++;
         next.resolve();
       }
     }

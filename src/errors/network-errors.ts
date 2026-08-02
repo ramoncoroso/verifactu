@@ -5,13 +5,38 @@
 import { VerifactuError, ErrorCode, type RetryInfo } from './base-error.js';
 
 /**
- * Default retry configuration for network errors
+ * Reintentabilidad por defecto de los errores de red.
+ *
+ * **Sin `retryAfterMs`.** Llevaba 1000 ms fijos, y como `withRetry` prioriza ese
+ * valor sobre el cálculo exponencial, el backoff nunca llegaba a ejecutarse para
+ * ningún error que lanzara el cliente SOAP: los reintentos salían a 1000, 1001,
+ * 1001 ms. `retryAfterMs` queda reservado para cuando la AEAT indique una espera
+ * concreta.
  */
 const DEFAULT_RETRY_INFO: RetryInfo = {
   retryable: true,
-  retryAfterMs: 1000,
   maxRetries: 3,
 };
+
+/**
+ * Si un SOAPFault procede del servidor y por tanto debe reenviarse.
+ *
+ * La AEAT lo instruye expresamente en el §5.1 de «Descripción del servicio web»:
+ * ante un `faultcode` de tipo `soapenv:Server`, «Reenviar mensaje»; ante uno de
+ * tipo `soapenv:Client`, corregir antes. Todos los faults se marcaban como no
+ * reintentables, en contra de esa instrucción.
+ */
+export function esFaultDeServidor(faultCode: string | undefined): boolean {
+  return /server/i.test(faultCode ?? '');
+}
+
+/**
+ * Extrae el código de error de la AEAT embebido en el `faultstring`, que llega
+ * con el formato `Codigo[4104].texto`.
+ */
+export function extraerCodigoAeat(faultString: string | undefined): string | undefined {
+  return /Codigo\[(\d+)\]/.exec(faultString ?? '')?.[1];
+}
 
 /**
  * Base class for network errors
@@ -79,11 +104,79 @@ export class SslError extends NetworkError {
 }
 
 /**
+ * Códigos de estado que merecen un reenvío.
+ *
+ * Un 5xx o un 429 son condiciones transitorias del servicio; un 4xx describe una
+ * petición que reenviada tal cual volverá a fallar igual. El 408 y el 425 son las
+ * dos excepciones dentro del rango 4xx.
+ */
+function estadoReintentable(statusCode: number): boolean {
+  return statusCode >= 500 || statusCode === 408 || statusCode === 425 || statusCode === 429;
+}
+
+/**
+ * Traduce una cabecera `Retry-After` —segundos o fecha HTTP— a milisegundos.
+ */
+export function parseRetryAfter(valor: string | string[] | undefined, ahora = Date.now()): number | undefined {
+  const bruto = Array.isArray(valor) ? valor[0] : valor;
+  if (bruto === undefined || bruto.trim() === '') return undefined;
+  const segundos = Number(bruto.trim());
+  if (Number.isFinite(segundos)) return segundos >= 0 ? Math.round(segundos * 1000) : undefined;
+  const fecha = Date.parse(bruto);
+  if (Number.isNaN(fecha)) return undefined;
+  return Math.max(0, fecha - ahora);
+}
+
+/**
+ * Respuesta HTTP con un código de error, sin `SOAPFault` que la explique.
+ *
+ * Antes se ignoraba el código de estado por completo: un 403 del balanceador de
+ * la AEAT —el que sale cuando el certificado no está autorizado para ese NIF—
+ * llega con una página HTML, se parseaba sin más, y el fallo emergía tres capas
+ * más arriba como «missing RespuestaRegFactuSistemaFacturacion». Un problema de
+ * credenciales disfrazado de error de negocio. Y un 503, que sí hay que
+ * reintentar, tampoco se distinguía de un éxito.
+ */
+export class HttpStatusError extends NetworkError {
+  readonly statusCode: number;
+  /** Cuerpo devuelto por el servidor, íntegro, para poder diagnosticar. */
+  readonly responseBody: string;
+
+  constructor(
+    statusCode: number,
+    responseBody: string,
+    options?: { retryAfterMs?: number; url?: string }
+  ) {
+    const reintentable = estadoReintentable(statusCode);
+    const extracto = responseBody.replace(/\s+/g, ' ').trim().slice(0, 300);
+    super(
+      `La AEAT respondió HTTP ${statusCode}${options?.url === undefined ? '' : ` a ${options.url}`}` +
+        (extracto === '' ? '' : `: ${extracto}${responseBody.length > 300 ? '…' : ''}`),
+      ErrorCode.NETWORK_ERROR,
+      {
+        retry: reintentable
+          ? {
+              retryable: true,
+              maxRetries: 3,
+              ...(options?.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }),
+            }
+          : { retryable: false },
+      }
+    );
+    this.name = 'HttpStatusError';
+    this.statusCode = statusCode;
+    this.responseBody = responseBody;
+  }
+}
+
+/**
  * SOAP protocol error
  */
 export class SoapError extends NetworkError {
   readonly soapFaultCode?: string;
   readonly soapFaultString?: string;
+  /** Código de la AEAT embebido en el `faultstring`, si lo trae. */
+  readonly aeatCode?: string;
 
   constructor(
     message: string,
@@ -93,13 +186,19 @@ export class SoapError extends NetworkError {
       cause?: Error;
     }
   ) {
+    // La reintentabilidad se deriva del `faultcode`: la AEAT instruye reenviar
+    // ante `soapenv:Server` y corregir ante `soapenv:Client`. Marcarlos todos
+    // como no reintentables contradecía esa instrucción.
+    const reintentable = esFaultDeServidor(options?.faultCode);
     super(message, ErrorCode.SOAP_ERROR, {
       cause: options?.cause,
-      retry: { retryable: false },
+      retry: reintentable ? { retryable: true, maxRetries: 3 } : { retryable: false },
     });
     this.name = 'SoapError';
     this.soapFaultCode = options?.faultCode;
     this.soapFaultString = options?.faultString;
+    const codigo = extraerCodigoAeat(options?.faultString);
+    if (codigo !== undefined) this.aeatCode = codigo;
   }
 
   static fromFault(faultCode: string, faultString: string): SoapError {
