@@ -3,7 +3,7 @@
 **Production-ready** TypeScript library for integrating with the **Spanish Tax Agency (AEAT) Verifactu** invoice verification system.
 
 [![CI](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml/badge.svg)](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/ramoncoroso/verifactu/branch/master/graph/badge.svg)](https://codecov.io/gh/ramoncoroso/verifactu)
+[![codecov](https://codecov.io/gh/ramoncoroso/verifactu/branch/main/graph/badge.svg)](https://codecov.io/gh/ramoncoroso/verifactu)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
