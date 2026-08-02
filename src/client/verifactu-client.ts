@@ -13,7 +13,7 @@ import { RecordChain } from '../crypto/chain.js';
 import type { ChainState } from '../crypto/chain.js';
 import { SoapClient, createSoapClient } from './soap-client.js';
 import { getEndpoints, SOAP_ACTIONS, type Environment, type ServiceEndpoints } from './endpoints.js';
-import { formatAeatDate } from '../format/aeat.js';
+import { buildNumSerieFactura, formatAeatDate } from '../format/aeat.js';
 import {
   mapCabecera,
   mapCancellationToRegistroAnulacion,
@@ -172,46 +172,37 @@ export class VerifactuClient {
   /**
    * Submit an invoice to AEAT
    */
-  async submitInvoice(invoice: Invoice): Promise<SubmitInvoiceResponse> {
-    const startTime = Date.now();
-    const invoiceNum = invoice.id.series
-      ? `${invoice.id.series}${invoice.id.number}`
-      : invoice.id.number;
-
-    this.logger.info('Submitting invoice', {
-      operation: 'submitInvoice',
-      invoiceId: invoiceNum,
-      issuerNif: invoice.issuer.taxId.value.slice(-4),
-      invoiceType: invoice.invoiceType,
-    });
-
+  /**
+   * Genera el registro y su XML. **Se llama una sola vez por factura.**
+   *
+   * Va aparte del envío a propósito. El defecto anterior era que
+   * `submitInvoiceWithRetry` reinvocaba `submitInvoice` entero, que ejecutaba
+   * `new Date()` de nuevo; como `FechaHoraHusoGenRegistro` entra en la huella,
+   * cada reintento producía **un registro distinto para la misma factura**,
+   * justo cuando el primer envío pudo haber llegado a la AEAT.
+   */
+  private prepareAlta(invoice: Invoice): {
+    processed: Invoice & { hash: string };
+    body: string;
+  } {
     const timestamp = new Date();
     const isFirst = this.chain.isFirstRecord();
+    const processed = this.chain.processInvoice(invoice, timestamp);
+    return { processed, body: this.buildAltaSoapBody(processed, timestamp, isFirst) };
+  }
 
-    // Process invoice through chain
-    const processedInvoice = this.chain.processInvoice(invoice, timestamp);
-
-    // Build SOAP request
-    const soapBody = this.buildAltaSoapBody(processedInvoice, timestamp, isFirst);
-
-    this.logger.debug('SOAP request built', {
-      operation: 'submitInvoice',
-      invoiceId: invoiceNum,
-      xml: sanitizeXmlForLogging(soapBody),
-    });
-
+  /** Envía un cuerpo ya construido y parsea la respuesta. Es lo único que se reintenta. */
+  private async sendAlta(
+    body: string,
+    processed: Invoice & { hash: string },
+    invoiceNum: string,
+    startTime: number
+  ): Promise<SubmitInvoiceResponse> {
     try {
-      // Send request with concurrency limiting
       const response = await this.concurrencyLimiter.execute(() =>
-        this.soapClient.send(
-          this.endpoints.alta,
-          SOAP_ACTIONS.ALTA,
-          soapBody
-        )
+        this.soapClient.send(this.endpoints.alta, SOAP_ACTIONS.ALTA, body)
       );
-
-      // Parse response
-      const result = this.parseAltaResponse(response.xml, processedInvoice);
+      const result = this.parseAltaResponse(response.xml, processed);
       const durationMs = Date.now() - startTime;
 
       if (result.accepted) {
@@ -223,6 +214,8 @@ export class VerifactuClient {
           durationMs,
         });
       } else {
+        // El registro NO se retira de la cadena: ya está generado y su huella
+        // impresa. El remedio normativo es un alta de subsanación.
         this.logger.warn('Invoice rejected', {
           operation: 'submitInvoice',
           invoiceId: invoiceNum,
@@ -232,71 +225,74 @@ export class VerifactuClient {
           durationMs,
         });
       }
-
       return result;
     } catch (error) {
-      const durationMs = Date.now() - startTime;
       this.logger.error('Invoice submission failed', {
         operation: 'submitInvoice',
         invoiceId: invoiceNum,
         error: error instanceof Error ? error.message : String(error),
-        durationMs,
+        durationMs: Date.now() - startTime,
       });
       throw error;
     }
   }
 
   /**
+   * Registra una factura en la AEAT.
+   */
+  async submitInvoice(invoice: Invoice): Promise<SubmitInvoiceResponse> {
+    const startTime = Date.now();
+    const invoiceNum = buildNumSerieFactura(invoice.id);
+
+    this.logger.info('Submitting invoice', {
+      operation: 'submitInvoice',
+      invoiceId: invoiceNum,
+      issuerNif: invoice.issuer.taxId.value.slice(-4),
+      invoiceType: invoice.invoiceType,
+    });
+
+    const { processed, body } = this.prepareAlta(invoice);
+
+    this.logger.debug('SOAP request built', {
+      operation: 'submitInvoice',
+      invoiceId: invoiceNum,
+      xml: sanitizeXmlForLogging(body),
+    });
+
+    return this.sendAlta(body, processed, invoiceNum, startTime);
+  }
+
+  /**
    * Cancel an invoice
    */
-  async cancelInvoice(
+  /** Genera el registro de anulación y su XML. Se llama una sola vez. */
+  private prepareAnulacion(
     invoiceId: InvoiceId,
     issuer: Issuer,
     reason?: string
-  ): Promise<SubmitCancellationResponse> {
-    const startTime = Date.now();
-    const invoiceNum = invoiceId.series
-      ? `${invoiceId.series}${invoiceId.number}`
-      : invoiceId.number;
-
-    this.logger.info('Cancelling invoice', {
-      operation: 'cancelInvoice',
-      invoiceId: invoiceNum,
-      issuerNif: issuer.taxId.value.slice(-4),
-      reason: reason ?? 'not specified',
-    });
-
-    const cancellation: InvoiceCancellation = reason !== undefined
-      ? { operationType: 'AN', invoiceId, issuer, reason }
-      : { operationType: 'AN', invoiceId, issuer };
-
+  ): { processed: InvoiceCancellation & { hash: string }; body: string } {
+    const cancellation: InvoiceCancellation =
+      reason !== undefined
+        ? { operationType: 'AN', invoiceId, issuer, reason }
+        : { operationType: 'AN', invoiceId, issuer };
     const timestamp = new Date();
     const isFirst = this.chain.isFirstRecord();
+    const processed = this.chain.processCancellation(cancellation, timestamp);
+    return { processed, body: this.buildAnulacionSoapBody(processed, timestamp, isFirst) };
+  }
 
-    // Process cancellation through chain
-    const processedCancellation = this.chain.processCancellation(cancellation, timestamp);
-
-    // Build SOAP request
-    const soapBody = this.buildAnulacionSoapBody(processedCancellation, timestamp, isFirst);
-
-    this.logger.debug('SOAP request built', {
-      operation: 'cancelInvoice',
-      invoiceId: invoiceNum,
-      xml: sanitizeXmlForLogging(soapBody),
-    });
-
+  /** Envía una anulación ya construida. Es lo único que se reintenta. */
+  private async sendAnulacion(
+    body: string,
+    processed: InvoiceCancellation & { hash: string },
+    invoiceNum: string,
+    startTime: number
+  ): Promise<SubmitCancellationResponse> {
     try {
-      // Send request with concurrency limiting
       const response = await this.concurrencyLimiter.execute(() =>
-        this.soapClient.send(
-          this.endpoints.anulacion,
-          SOAP_ACTIONS.ANULACION,
-          soapBody
-        )
+        this.soapClient.send(this.endpoints.anulacion, SOAP_ACTIONS.ANULACION, body)
       );
-
-      // Parse response
-      const result = this.parseAnulacionResponse(response.xml, processedCancellation);
+      const result = this.parseAnulacionResponse(response.xml, processed);
       const durationMs = Date.now() - startTime;
 
       if (result.accepted) {
@@ -317,18 +313,43 @@ export class VerifactuClient {
           durationMs,
         });
       }
-
       return result;
     } catch (error) {
-      const durationMs = Date.now() - startTime;
       this.logger.error('Invoice cancellation failed', {
         operation: 'cancelInvoice',
         invoiceId: invoiceNum,
         error: error instanceof Error ? error.message : String(error),
-        durationMs,
+        durationMs: Date.now() - startTime,
       });
       throw error;
     }
+  }
+
+  /** Anula una factura registrada. */
+  async cancelInvoice(
+    invoiceId: InvoiceId,
+    issuer: Issuer,
+    reason?: string
+  ): Promise<SubmitCancellationResponse> {
+    const startTime = Date.now();
+    const invoiceNum = buildNumSerieFactura(invoiceId);
+
+    this.logger.info('Cancelling invoice', {
+      operation: 'cancelInvoice',
+      invoiceId: invoiceNum,
+      issuerNif: issuer.taxId.value.slice(-4),
+      reason: reason ?? 'not specified',
+    });
+
+    const { processed, body } = this.prepareAnulacion(invoiceId, issuer, reason);
+
+    this.logger.debug('SOAP request built', {
+      operation: 'cancelInvoice',
+      invoiceId: invoiceNum,
+      xml: sanitizeXmlForLogging(body),
+    });
+
+    return this.sendAnulacion(body, processed, invoiceNum, startTime);
   }
 
   /**
@@ -411,35 +432,32 @@ export class VerifactuClient {
     options?: RetryOptions
   ): Promise<SubmitInvoiceResponse> {
     const retryOpts = { ...this.retryOptions, ...options };
-    const invoiceNum = invoice.id.series
-      ? `${invoice.id.series}${invoice.id.number}`
-      : invoice.id.number;
+    const invoiceNum = buildNumSerieFactura(invoice.id);
+    const startTime = Date.now();
 
-    // Save chain state before operation to restore on retry
-    const savedChainState = this.chain.getState();
+    // El registro se genera UNA VEZ, fuera del reintento. Lo que se reintenta es
+    // el envío de los mismos bytes. Reintentar es seguro porque la AEAT
+    // identifica el registro por IDEmisorFactura + NumSerieFactura +
+    // FechaExpedicionFactura —no por la huella— y devuelve el código 3000 con el
+    // bloque RegistroDuplicado si ya constaba, que se interpreta como éxito.
+    const { processed, body } = this.prepareAlta(invoice);
 
-    return withRetry(
-      () => this.submitInvoice(invoice),
-      {
-        ...retryOpts,
-        onRetry: (attempt, error, delayMs) => {
-          // Log retry attempt
-          this.logger.warn('Retrying invoice submission', {
-            operation: 'submitInvoice',
-            invoiceId: invoiceNum,
-            attempt,
-            delayMs,
-            error: error instanceof Error ? error.message : String(error),
-          });
-
-          // Restore chain state before retry to prevent duplicate entries
-          this.chain = RecordChain.fromState(savedChainState);
-
-          // Call user's onRetry callback if provided
-          retryOpts.onRetry?.(attempt, error, delayMs);
-        },
-      }
-    );
+    return withRetry(() => this.sendAlta(body, processed, invoiceNum, startTime), {
+      ...retryOpts,
+      onRetry: (attempt, error, delayMs) => {
+        this.logger.warn('Retrying invoice submission', {
+          operation: 'submitInvoice',
+          invoiceId: invoiceNum,
+          attempt,
+          delayMs,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Aquí se restauraba el estado de la cadena. Era el defecto: al
+        // reinvocarse `submitInvoice` se regeneraba el registro con otro
+        // instante y, por tanto, con otra huella.
+        retryOpts.onRetry?.(attempt, error, delayMs);
+      },
+    });
   }
 
   /**
@@ -464,35 +482,26 @@ export class VerifactuClient {
     options?: RetryOptions
   ): Promise<SubmitCancellationResponse> {
     const retryOpts = { ...this.retryOptions, ...options };
-    const invoiceNum = invoiceId.series
-      ? `${invoiceId.series}${invoiceId.number}`
-      : invoiceId.number;
+    const invoiceNum = buildNumSerieFactura(invoiceId);
+    const startTime = Date.now();
 
-    // Save chain state before operation to restore on retry
-    const savedChainState = this.chain.getState();
+    // Igual que en el alta: el registro se genera una vez y el reintento reenvía
+    // los mismos bytes.
+    const { processed, body } = this.prepareAnulacion(invoiceId, issuer, reason);
 
-    return withRetry(
-      () => this.cancelInvoice(invoiceId, issuer, reason),
-      {
-        ...retryOpts,
-        onRetry: (attempt, error, delayMs) => {
-          // Log retry attempt
-          this.logger.warn('Retrying invoice cancellation', {
-            operation: 'cancelInvoice',
-            invoiceId: invoiceNum,
-            attempt,
-            delayMs,
-            error: error instanceof Error ? error.message : String(error),
-          });
-
-          // Restore chain state before retry to prevent duplicate entries
-          this.chain = RecordChain.fromState(savedChainState);
-
-          // Call user's onRetry callback if provided
-          retryOpts.onRetry?.(attempt, error, delayMs);
-        },
-      }
-    );
+    return withRetry(() => this.sendAnulacion(body, processed, invoiceNum, startTime), {
+      ...retryOpts,
+      onRetry: (attempt, error, delayMs) => {
+        this.logger.warn('Retrying invoice cancellation', {
+          operation: 'cancelInvoice',
+          invoiceId: invoiceNum,
+          attempt,
+          delayMs,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        retryOpts.onRetry?.(attempt, error, delayMs);
+      },
+    });
   }
 
   /**

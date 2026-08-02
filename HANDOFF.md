@@ -27,7 +27,7 @@ enunciado verificado de cada hallazgo y **mandan sobre los documentos**.
 
 | | |
 |---|---|
-| Tests | 740 en verde |
+| Tests | 753 en verde |
 | CI | 9 jobs, incluido `Conformidad AEAT` |
 | Dependencias de runtime | 1 (`qrcode-generator`, 0 transitivas) · `npm audit --omit=dev` → 0 |
 | Hallazgos | 39 catalogados · **20 abiertos, 20 cerrados** |
@@ -102,30 +102,32 @@ estado, más lo que solo se cierra contra el servicio real.
 
 | # | Trabajo | h | Cierra |
 |---|---|---:|---|
-| **8** | **Cadena append-only y reenvío de bytes** | ~20 | #21 |
+| ~~8~~ | ~~Cadena append-only y reenvío de bytes~~ | — | ✅ #79 |
 | **9** | **Control de flujo y envío por lotes** | ~14 | #22, #36 |
 | **10** | **Endurecer transporte y parser** | ~14 | #30, #37, #39, #40 |
 | **11** | **Puerta de calidad al CI** | ~8 | #28, #68 |
 | **12** | **Preproducción** | — | requiere certificado |
 
-**Empieza por el 8**, y con cuidado, porque es el que más fácilmente se hace mal:
+**Empieza por el 9**, que ya tiene todo lo que necesita: `tiempoEsperaEnvioSeconds`
+y `estadoEnvio` se parsean desde #78, y desde #79 el registro se genera una vez y
+el envío es una operación separada, que es justo lo que hay que encolar.
 
-- La cadena **debe avanzar** aunque la AEAT rechace el registro. Revertirla sería
-  una no conformidad: el remedio normativo ante un rechazo es un alta de
-  subsanación con `Subsanacion="S"` y `RechazoPrevio="X"`, no rehacer el anterior.
-  Esto ya se documentó mal una vez, se refutó, y está en #21.
-- El bug real está en el reintento: `submitInvoice` genera un `new Date()` nuevo
-  en cada intento, así que produce **dos huellas distintas para la misma factura**
-  justo cuando el primer envío pudo haber llegado. El arreglo es reenviar los
-  bytes almacenados.
+Sin envío por lotes, respetar el art. 16.2 dejaría el caudal en **una factura cada
+60 segundos**: la norma permite enviar antes de que venza el temporizador solo si
+ya se han acumulado 1.000 registros, así que el patrón obligado es acumular.
+
+Lo que conviene saber de la cadena, ya resuelto en #79 pero fácil de romper:
+
+- La cadena **debe avanzar** aunque la AEAT rechace. Revertirla sería una no
+  conformidad. `RecordChain` no expone `revert`, `rollback` ni `restore`, y hay un
+  test que falla si alguien los añade. El remedio ante un rechazo son
+  `datosSubsanacionTrasRechazo()` y `datosSubsanacionTrasAceptacion()`.
+- **El reintento reenvía los mismos bytes.** El registro se genera una vez, fuera
+  del `withRetry`. Si vuelves a meter la generación dentro, cada intento producirá
+  una huella distinta para la misma factura.
 - Reintentar es seguro: la AEAT identifica el registro por
   `IDEmisorFactura + NumSerieFactura + FechaExpedicionFactura`, **no por la
-  huella**, y devuelve el código `3000` con el bloque `RegistroDuplicado`. Ya se
-  interpreta como éxito (`esRegistroYaPresentado` en `src/client/respuesta.ts`).
-
-El **9** se apoya en el **8** y ya tiene los datos: `tiempoEsperaEnvioSeconds` y
-`estadoEnvio` se parsean desde #78. Sin envío por lotes, respetar el art. 16.2
-dejaría el caudal en **una factura cada 60 segundos**.
+  huella**, y `esRegistroYaPresentado` interpreta el código `3000` como éxito.
 
 ### Consejos de quien viene de arrastrarse por aquí
 
@@ -182,10 +184,11 @@ que abra un PR cuesta menos de una hora y no está en ninguna fase. La
 especificación se movió dos veces mientras se escribía este código.
 
 **Hay cuatro hallazgos del panel sin issue**, anotados al final de las enmiendas
-del plan. Uno de ellos ha perdido la mitad de su gravedad al cerrarse #33 —las
-respuestas ya no lanzan—, pero la otra mitad sigue viva: **la cadena avanza antes
-del envío** y no se revierte ante un error no reintentable. Es lo primero que hay
-que resolver en el punto 8.
+del plan. El que más pesaba —la cadena avanzando en cada envío que el llamante ve
+fallido— quedó resuelto entre #78 y #79: las respuestas ya no lanzan, y la cadena
+avanza una sola vez por factura aunque haya reintentos. Lo que queda por decidir
+es la **persistencia**: el estado vive en memoria, así que si el proceso muere
+entre generar el registro e imprimirlo, al rearrancar se bifurca la cadena.
 
 **Y aparecen PRs de bots.** Cinco en una tarde, tres arreglos duplicados dos
 veces, de una cuenta sin nombre con 67 repos y cero seguidores, minutos después de
