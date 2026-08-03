@@ -30,7 +30,7 @@ documentos**.
 
 | | |
 |---|---|
-| Tests | **1003** en verde (36 ficheros) |
+| Tests | **1017** en verde (37 ficheros) |
 | Cobertura | 93,5 % · umbrales 91/94/87/91, ajustados a la realidad |
 | `typecheck` + `typecheck:tests` | limpios, ambos bloqueantes en CI |
 | `lint:all` | limpio (14 warnings `no-console` intencionados) |
@@ -85,6 +85,7 @@ vendorizado en `schemas/` y **congelado por sha256**.
 | [#88](https://github.com/ramoncoroso/verifactu/pull/88) | — | Los ejemplos del README **se ejecutan**, no solo compilan |
 | [#89](https://github.com/ramoncoroso/verifactu/pull/89) | — | El humo sobre el paquete instalado entra en el CI |
 | [#90](https://github.com/ramoncoroso/verifactu/pull/90) | 15 PR de dependabot | Dependencias de desarrollo al día y migración a *flat config* |
+| [#91](https://github.com/ramoncoroso/verifactu/pull/91) | — | El error del QR deja de mentir sobre la causa; test intermitente a reloj falso |
 
 ### La prueba de humo sobre el paquete instalado
 
@@ -138,15 +139,19 @@ bloque con el motivo escrito en cada una.
 Se borró también `master`, un resto de la renombrada: ancestro de `main` y sin un
 solo commit propio. El CI dejó de dispararse en ella.
 
-Tres defectos reales que destaparon las reglas nuevas del linter al subir, y que
-no eran ruido:
+Tres hallazgos del linter al subir. **Dos de ellos escondían defectos de verdad**,
+que se corrigieron después en #91 al mirarlos a fondo:
 
 - `soap-client.ts` rechazaba promesas con un `unknown`; ahora garantiza `Error`.
-- Dos `catch` ligaban una variable que no usaban.
-- `retry.test.ts` tenía una aserción de tiempo a filo de navaja —`>= 10` con un
-  retardo de 10 ms— que **se vio fallar** en una suite completa bajo carga y
-  pasar en aislado. Un test intermitente es peor que ninguno: pasa a 50 ms con
-  margen de 10.
+- El `catch` sin usar de `qr/generator.ts` no era cosmético: atribuía **cualquier**
+  fallo de `qrcode-generator` a «datos demasiado grandes» con un máximo cableado
+  a 2331 —la capacidad del nivel M—. Con nivel `H` producía «1400 bytes exceeds
+  maximum 2331», un mensaje que se contradice a sí mismo, y un nivel de
+  corrección ilegal se disfrazaba de datos grandes. Además la librería lanza
+  **cadenas**, no `Error`, así que el `catch` tiraba el único texto útil.
+- `retry.test.ts` cronometraba con el reloj real. Ensanchar el margen reducía la
+  intermitencia sin quitar la causa; ahora usa temporizadores falsos y la medida
+  es exacta.
 
 Y un aviso para el próximo que mire la cobertura: si alguien sube
 `@vitest/coverage-v8` a la 4, `branches` cae del 89,6 al 84,6 **sin que cambie
