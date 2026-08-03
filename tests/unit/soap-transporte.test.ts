@@ -303,3 +303,59 @@ describe('Cuerpo de la petición', () => {
     expect(cabeceras['Content-Length']).not.toBe(cuerpo.length);
   });
 });
+
+describe('Redirecciones · el 302 con el que la AEAT pide certificado', () => {
+  // Medido contra el servicio real de preproducción el 2026-08-03: sin
+  // certificado de cliente —o con uno que no reconoce, comprobado con un
+  // autofirmado— `prewww1.aeat.es` responde
+  //
+  //   HTTP/1.0 302 Moved Temporarily
+  //   Location: https://sede.agenciatributaria.gob.es/Sede/errores/erro4033.html
+  //
+  // y esa página dice literalmente: «403 Error de identificación. No se detecta
+  // certificado electrónico o no se ha seleccionado correctamente.»
+  //
+  // El cuerpo del 302 viene vacío, así que la librería intentaba parsearlo y
+  // devolvía «Failed to parse SOAP response». El fallo de integración MÁS
+  // COMÚN —falta el certificado— se presentaba como un problema de XML. Es el
+  // mismo defecto de #30 por la vía del redirect, que nadie había tocado porque
+  // exige hablar con el servicio real.
+  const REDIRECCION_AEAT = 'https://sede.agenciatributaria.gob.es/Sede/errores/erro4033.html';
+
+  it('un 302 no se intenta parsear como XML', async () => {
+    responder('', { statusCode: 302, headers: { location: REDIRECCION_AEAT } });
+    const error = await sendSoapRequest(opciones()).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(HttpStatusError);
+    expect((error as Error).message).not.toMatch(/parse/i);
+  });
+
+  it('el mensaje nombra el certificado, que es la causa', async () => {
+    responder('', { statusCode: 302, headers: { location: REDIRECCION_AEAT } });
+    const error = await sendSoapRequest(opciones()).catch((e: unknown) => e);
+    expect((error as Error).message).toMatch(/certificado/i);
+  });
+
+  it('no se reintenta: reenviarlo no consigue un certificado', async () => {
+    responder('', { statusCode: 302, headers: { location: REDIRECCION_AEAT } });
+    const error = await sendSoapRequest(opciones()).catch((e: unknown) => e);
+    expect(isRetryableError(error)).toBe(false);
+  });
+
+  it.each([301, 302, 303, 307, 308])(
+    'un %i cualquiera también es un error: un servicio SOAP no redirige',
+    async (codigo) => {
+      responder('', { statusCode: codigo, headers: { location: 'https://otro.example/' } });
+      const error = await sendSoapRequest(opciones()).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(HttpStatusError);
+      expect((error as HttpStatusError).statusCode).toBe(codigo);
+      // Seguir la redirección reenviaría el cuerpo firmado a otro host.
+      expect((error as Error).message).toContain('otro.example');
+    }
+  );
+
+  it('un 200 normal sigue funcionando', async () => {
+    responder(SOBRE);
+    const r = await sendSoapRequest(opciones());
+    expect(r.statusCode).toBe(200);
+  });
+});

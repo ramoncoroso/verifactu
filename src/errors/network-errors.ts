@@ -110,6 +110,16 @@ export class SslError extends NetworkError {
  * petición que reenviada tal cual volverá a fallar igual. El 408 y el 425 son las
  * dos excepciones dentro del rango 4xx.
  */
+/**
+ * Si el 3xx es el que devuelve la AEAT cuando falta el certificado de cliente.
+ *
+ * Medido contra `prewww1.aeat.es`: sin certificado —o con uno que no reconoce—
+ * responde `302` con `Location` a su página de error 403.
+ */
+export function esRedireccionDeCertificado(statusCode: number, location?: string): boolean {
+  return statusCode >= 300 && statusCode < 400 && /erro403|errores/i.test(location ?? '');
+}
+
 function estadoReintentable(statusCode: number): boolean {
   return statusCode >= 500 || statusCode === 408 || statusCode === 425 || statusCode === 429;
 }
@@ -141,16 +151,26 @@ export class HttpStatusError extends NetworkError {
   readonly statusCode: number;
   /** Cuerpo devuelto por el servidor, íntegro, para poder diagnosticar. */
   readonly responseBody: string;
+  /** Destino de la redirección, si el servidor devolvió un 3xx. */
+  readonly location?: string;
 
   constructor(
     statusCode: number,
     responseBody: string,
-    options?: { retryAfterMs?: number; url?: string }
+    options?: { retryAfterMs?: number; url?: string; location?: string }
   ) {
     const reintentable = estadoReintentable(statusCode);
     const extracto = responseBody.replace(/\s+/g, ' ').trim().slice(0, 300);
     super(
       `La AEAT respondió HTTP ${statusCode}${options?.url === undefined ? '' : ` a ${options.url}`}` +
+        (options?.location === undefined ? '' : `, redirigiendo a ${options.location}`) +
+        (esRedireccionDeCertificado(statusCode, options?.location)
+          ? '. Eso significa que el servicio no ha recibido un certificado de cliente válido: ' +
+            'su propia página lo explica como «403 Error de identificación. No se detecta ' +
+            'certificado electrónico o no se ha seleccionado correctamente». Comprueba que el ' +
+            'certificado sea de representante o de sello de entidad, esté emitido por una ' +
+            'autoridad reconocida y que su NIF conste en el censo de la AEAT'
+          : '') +
         (extracto === '' ? '' : `: ${extracto}${responseBody.length > 300 ? '…' : ''}`),
       ErrorCode.NETWORK_ERROR,
       {
@@ -166,6 +186,7 @@ export class HttpStatusError extends NetworkError {
     this.name = 'HttpStatusError';
     this.statusCode = statusCode;
     this.responseBody = responseBody;
+    if (options?.location !== undefined) this.location = options.location;
   }
 }
 

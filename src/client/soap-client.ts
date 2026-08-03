@@ -208,12 +208,20 @@ export async function sendSoapRequest(options: SoapRequestOptions): Promise<Soap
           }
         }
 
-        if (statusCode >= 400) {
+        // El umbral es 300, no 400: **un servicio SOAP no redirige**. La AEAT
+        // usa un 302 a su página de error 403 cuando no recibe un certificado
+        // de cliente válido —el fallo de integración más común—, y con el
+        // umbral en 400 eso caía en el parseo y salía como «Failed to parse
+        // SOAP response». Seguir la redirección sería peor: reenviaría el
+        // cuerpo firmado a otro host.
+        if (statusCode >= 300) {
           const retryAfterMs = parseRetryAfter(headers['retry-after']);
+          const location = headers['location'];
           reject(
             new HttpStatusError(statusCode, body, {
               url: options.url,
               ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+              ...(typeof location === 'string' ? { location } : {}),
             })
           );
           return;
