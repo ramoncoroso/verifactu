@@ -126,7 +126,7 @@ function buildMatrix(data: string, ec: 'L' | 'M' | 'Q' | 'H'): boolean[][] {
     qr = qrcode(0, ec); // 0 = versión automática
     qr.addData(data, 'Byte');
     qr.make();
-  } catch (error) {
+  } catch {
     throw new QrDataTooLargeError(data.length, 2331);
   }
   const n = qr.getModuleCount();

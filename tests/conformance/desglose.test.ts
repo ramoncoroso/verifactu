@@ -68,7 +68,7 @@ describe('ClaveRegimen por línea', () => {
         taxBreakdown: {
           vatBreakdowns: [{ taxBase: 100, vatRate: 21, vatAmount: 21, regime: '11' }],
         },
-      } as Partial<Invoice>)
+      })
     );
     expect(linea[0]?.claveRegimen).toBe('11');
   });
@@ -83,7 +83,7 @@ describe('ClaveRegimen por línea', () => {
           ],
         },
         totalAmount: 363,
-      } as Partial<Invoice>)
+      })
     );
     expect(claves(xml)).toEqual(['01', '11']);
   });
@@ -93,7 +93,7 @@ describe('ClaveRegimen por línea', () => {
       factura({
         operationRegimes: ['07'],
         taxBreakdown: { vatBreakdowns: [{ taxBase: 100, vatRate: 21, vatAmount: 21 }] },
-      } as Partial<Invoice>)
+      })
     );
     expect(linea[0]?.claveRegimen).toBe('07');
   });
@@ -105,7 +105,7 @@ describe('ClaveRegimen por línea', () => {
         taxBreakdown: {
           vatBreakdowns: [{ taxBase: 100, vatRate: 21, vatAmount: 21, regime: '02' }],
         },
-      } as Partial<Invoice>)
+      })
     );
     expect(linea[0]?.claveRegimen).toBe('02');
   });
@@ -330,7 +330,7 @@ describe('Coherencia que la AEAT valida y rechazaría el registro', () => {
       } as unknown as Partial<Invoice>);
 
     expect(() => mapDesglose(noSujeta())).not.toThrow();
-    expect(() => mapDesglose(noSujeta({ invoiceType: 'F2' } as Partial<Invoice>))).toThrow(/F1/);
+    expect(() => mapDesglose(noSujeta({ invoiceType: 'F2' }))).toThrow(/F1/);
     expect(() =>
       mapDesglose(
         noSujeta({
@@ -439,7 +439,7 @@ describe('Una factura que la AEAT rechazaría no entra en la cadena', () => {
     const antes = c.getChainState();
 
     await expect(
-      c.submitInvoice(factura({ description: '' } as Partial<Invoice>))
+      c.submitInvoice(factura({ description: '' }))
     ).rejects.toThrow(/DescripcionOperacion/);
 
     expect(c.getChainState().recordCount).toBe(antes.recordCount);

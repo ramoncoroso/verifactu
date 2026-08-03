@@ -25,18 +25,20 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/index.ts', 'src/**/*.d.ts'],
       thresholds: {
-        // Ajustados a la cobertura real (93,5 / 89,6 / 96,8) menos un margen de
-        // 2 puntos. Los anteriores —70/80/80/70— estaban veinticuatro puntos por
-        // debajo del estado del repositorio, así que se podía borrar un módulo
-        // entero de tests sin que la puerta se enterara.
+        // Rebaseados al subir a `@vitest/coverage-v8` 4. **No hubo regresión**:
+        // el diff de `src/` en ese cambio fueron ocho líneas, y sin embargo
+        // `lines` SUBIÓ (93,49 → 94,64) mientras `branches` bajó (89,55 →
+        // 84,55). Movimiento en direcciones opuestas a la vez solo lo explica
+        // una medición distinta: la v4 cuenta como rama cosas que la v3 no
+        // —encadenamiento opcional, `??`, parámetros por defecto—.
         //
-        // Ojo con lo que significan: la cobertura mide EJECUCIÓN, no
-        // conformidad. El 94 % convivía con siete defectos bloqueantes porque
-        // el oráculo de cada test era la propia implementación. Quien de verdad
-        // vigila la conformidad es `tests/conformance/`, no este número.
-        lines: 91,
-        functions: 94,
-        branches: 87,
+        // Se fijan a lo medido menos ~2 puntos. Y siguen sin ser la garantía de
+        // nada: la cobertura mide EJECUCIÓN, no conformidad. El 94 % convivía
+        // con siete defectos bloqueantes. Quien vigila la conformidad es
+        // `tests/conformance/`.
+        lines: 92,
+        functions: 92,
+        branches: 82,
         statements: 91,
       },
     },

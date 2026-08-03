@@ -389,7 +389,7 @@ export function mapInvoiceToRegistroAlta(
     tipoFactura: campos.TipoFactura,
     ...(invoice.rectifiedInvoiceType === undefined
       ? {}
-      : { tipoRectificativa: invoice.rectifiedInvoiceType as 'S' | 'I' }),
+      : { tipoRectificativa: invoice.rectifiedInvoiceType }),
     ...(invoice.rectifiedInvoices?.length
       ? {
           facturasRectificadas: invoice.rectifiedInvoices.map((r) => ({
