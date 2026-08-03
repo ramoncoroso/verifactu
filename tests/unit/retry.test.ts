@@ -316,23 +316,34 @@ describe('Retry Utility', () => {
     });
 
     it('should measure total time including delays', async () => {
-      const operation = vi
-        .fn()
-        .mockRejectedValueOnce(new NetworkError('Fail'))
-        .mockResolvedValue('success');
+      // Con temporizadores falsos la medida es EXACTA y la suite no espera:
+      // `vi.useFakeTimers()` también falsea `Date.now()`, que es lo que usa
+      // `withRetryAndMetadata` para cronometrar.
+      //
+      // Antes era `>= 10` con un retardo real de 10 ms: se la vio fallar en una
+      // suite completa bajo carga y pasar en aislado, porque `setTimeout` puede
+      // dispararse un pelo antes y `Date.now()` tiene resolución de milisegundo.
+      // Un test intermitente es peor que ninguno.
+      vi.useFakeTimers();
+      try {
+        const operation = vi
+          .fn()
+          .mockRejectedValueOnce(new NetworkError('Fail'))
+          .mockResolvedValue('success');
 
-      const { totalTimeMs } = await withRetryAndMetadata(operation, {
-        initialDelayMs: 50,
-        jitterFactor: 0,
-      });
+        const promesa = withRetryAndMetadata(operation, {
+          initialDelayMs: 1000,
+          jitterFactor: 0,
+        });
 
-      // El margen no es cosmético: `setTimeout(50)` puede dispararse un poco
-      // antes y `Date.now()` tiene resolución de milisegundo, así que exigir
-      // exactamente el retardo es una aserción a filo de navaja. Con 10 ms se
-      // vio fallar en una suite completa bajo carga y pasar en aislado, que es
-      // la peor forma de test: intermitente. Lo que importa es que el tiempo
-      // total INCLUYA la espera, no que la clave al milisegundo.
-      expect(totalTimeMs).toBeGreaterThanOrEqual(40);
+        await vi.advanceTimersByTimeAsync(1000);
+        const { totalTimeMs, attempts } = await promesa;
+
+        expect(attempts).toBe(2);
+        expect(totalTimeMs).toBe(1000);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
