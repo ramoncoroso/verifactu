@@ -96,6 +96,7 @@ const client = new VerifactuClient({
 const factura = InvoiceBuilder.create()
   .issuer('B12345678', 'Mi Empresa SL')
   .recipient('A87654321', 'Cliente SA')
+  .type('F1')
   .id('FC', '0001', new Date())
   .description('Servicios de consultoría')
   .addVatBreakdown(1000, 21)
@@ -133,6 +134,7 @@ Una factura puede llevar tantas líneas de desglose como haga falta, hasta doce.
 const factura = InvoiceBuilder.create()
   .issuer('B12345678', 'Mi Empresa SL')
   .recipient('A87654321', 'Cliente SA')
+  .type('F1')
   .id('FC', '0002', new Date())
   .description('Suministros varios')
   .addVatBreakdown(1000, 21) //  general
@@ -180,16 +182,25 @@ con `CalificacionOperacion` `N1` (art. 7, 14 y otros) o `N2` (reglas de localiza
 const factura = InvoiceBuilder.create()
   .issuer('B12345678', 'Exportadora SL')
   .recipient('A87654321', 'Cliente SA')
+  .type('F1')
   .id('FC', '0004', new Date())
   .description('Exportación y suplidos')
   .addVatBreakdown(1000, 21)
-  .addExemptBreakdown(500, 'E2')     // entrega intracomunitaria
+  .addExemptBreakdown(500, 'E1')     // exenta por el art. 20
   .addNonSubjectBreakdown(120, 'N1') // suplidos
   .build();
 ```
 
 Causas de exención: `E1` (art. 20) · `E2` (art. 21) · `E3` (art. 22) · `E4` (arts. 23 y 24) ·
 `E5` (art. 25) · `E6` (otros).
+
+> **`E2` y `E3` no caben en régimen general.** La AEAT lo rechaza con el error 1199: una
+> exportación va con su propia `ClaveRegimen` (`02`), no con la `01`. La librería lo comprueba
+> antes de enviar, así que el fallo sale como error local:
+>
+> ```typescript
+> taxBreakdown: { exemptBreakdowns: [{ cause: 'E2', taxBase: 500, regime: '02' }] }
+> ```
 
 ### Rectificativas
 

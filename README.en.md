@@ -98,6 +98,7 @@ const client = new VerifactuClient({
 const invoice = InvoiceBuilder.create()
   .issuer('B12345678', 'My Company SL')
   .recipient('A87654321', 'Client SA')
+  .type('F1')
   .id('FC', '0001', new Date())
   .description('Consulting services')
   .addVatBreakdown(1000, 21)
@@ -135,6 +136,7 @@ An invoice may carry as many breakdown lines as needed, up to twelve.
 const invoice = InvoiceBuilder.create()
   .issuer('B12345678', 'My Company SL')
   .recipient('A87654321', 'Client SA')
+  .type('F1')
   .id('FC', '0002', new Date())
   .description('Assorted supplies')
   .addVatBreakdown(1000, 21) // standard
@@ -183,16 +185,25 @@ rules).
 const invoice = InvoiceBuilder.create()
   .issuer('B12345678', 'Exporter SL')
   .recipient('A87654321', 'Client SA')
+  .type('F1')
   .id('FC', '0004', new Date())
   .description('Export and disbursements')
   .addVatBreakdown(1000, 21)
-  .addExemptBreakdown(500, 'E2')     // intra-EU supply
+  .addExemptBreakdown(500, 'E1')     // exempt under art. 20
   .addNonSubjectBreakdown(120, 'N1') // disbursements
   .build();
 ```
 
 Exemption causes: `E1` (art. 20) · `E2` (art. 21) · `E3` (art. 22) · `E4` (arts. 23 and 24) ·
 `E5` (art. 25) · `E6` (other).
+
+> **`E2` and `E3` do not fit under the general regime.** The AEAT rejects that with error 1199:
+> an export carries its own `ClaveRegimen` (`02`), not `01`. The library checks it before
+> submitting, so the failure surfaces as a local error:
+>
+> ```typescript
+> taxBreakdown: { exemptBreakdowns: [{ cause: 'E2', taxBase: 500, regime: '02' }] }
+> ```
 
 ### Corrective invoices
 
