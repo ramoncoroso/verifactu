@@ -55,6 +55,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:conformance": "vitest run tests/conformance",
+    "smoke": "bash scripts/smoke/run.sh",
     "schemas:fetch": "node scripts/fetch-schemas.mjs",
     "schemas:check": "node scripts/fetch-schemas.mjs --check",
     "typecheck": "tsc --noEmit",

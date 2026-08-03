@@ -37,6 +37,7 @@ documentos**.
 | Dependencias de runtime | **1** (`qrcode-generator`, MIT, 0 transitivas) |
 | `npm audit --omit=dev` | 0 vulnerabilidades, puerta de tolerancia cero |
 | Duración de la suite | 5,6 s |
+| Jobs del CI | 8, incluido el humo sobre el paquete instalado |
 | Issues abiertos | **0** |
 | Publicación en npm | **desarmada** a doble llave (ver abajo) |
 
@@ -85,24 +86,29 @@ vendorizado en `schemas/` y **congelado por sha256**.
 
 ### La prueba de humo sobre el paquete instalado
 
-**No está automatizada, y encontró dos defectos.** Se hizo a mano el 2026-08-03,
-después de dar por buena la documentación, y conviene repetirla antes de publicar:
-
 ```bash
-npm run build && npm pack --pack-destination /tmp/humo
-mkdir -p /tmp/humo/app && cd /tmp/humo/app
-printf '{"name":"humo","version":"1.0.0","type":"module","private":true}' > package.json
-npm install /tmp/humo/ramoncoroso-verifactu-1.0.0.tgz
-# y usar la librería como la usaría cualquiera
+npm run smoke
 ```
 
-Lo que se comprobó: instalación limpia (2 paquetes, 1 dependencia, 0
+**Es la única capa que valida el artefacto publicado.** Todo lo demás —tests,
+typecheck, lint— importa `src/`, así que es ciego a lo que ocurre al empaquetar:
+qué entra en `files`, si el campo `exports` resuelve, si el build de CommonJS
+carga, si los `.d.ts` que salen tipan. Compila, empaqueta, instala el tarball en
+un proyecto temporal y lo usa como lo usaría cualquiera.
+
+Corre en el CI como job **«Humo · paquete instalado»**. Se comprobó que detecta
+regresiones de verdad, con tres mutaciones: devolver `schemas/` al tarball, dejar
+el QR en blanco y romper la ruta del `require` en `exports`. Las tres lo ponen
+rojo.
+
+Lo que comprueba: instalación limpia (2 paquetes, 1 dependencia, 0
 vulnerabilidades), contenido del tarball, **ESM** y **CommonJS**, los `.d.ts`
 publicados bajo `--strict`, el vector de huella 6.1 de la AEAT, el QR
 decodificado con `jsqr` coincidiendo carácter a carácter con la URL de cotejo,
 los endpoints del WSDL y el rechazo local de lo que la AEAT rechazaría.
 
-Lo que encontró, los dos en el README y los dos míos:
+Lo que encontró la primera vez que se ejecutó, con la suite entera en verde. Los
+dos en el README y los dos míos:
 
 1. **Tres ejemplos por idioma reventaban al ejecutarse** —construían la factura
    sin `.type()`—, incluido el de «Inicio rápido». **Compilaban perfectamente**:
@@ -192,10 +198,6 @@ Los tres primeros fallos que aparezcan probablemente sean de datos censales
 
 Nada de esto bloquea nada, y ninguno tiene issue abierto:
 
-- **Automatizar la prueba de humo en el CI** — un job que haga `npm pack`, instale
-  el tarball en un proyecto limpio y ejecute un guion de uso real. Es la única
-  capa que valida el **artefacto publicado**, y hoy se hace a mano. Habría
-  cazado sola los dos defectos de arriba.
 - **`InvoiceBatcher`** — `enqueue()` + `flush()` automático al llegar a 1000
   registros o al vencer `t`, lo que ocurra primero. Hoy hay que orquestar el
   lote a mano con `submitInvoices()`.

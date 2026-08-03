@@ -152,6 +152,32 @@ jobs:
           test -f dist/index.cjs
           test -f dist/index.d.ts
 
+  # La única capa que valida el ARTEFACTO PUBLICADO. Todo lo demás —tests, typecheck,
+  # lint— importa `src/`, así que es ciego a lo que ocurre al empaquetar: qué entra en
+  # `files`, si el campo `exports` resuelve, si el build de CommonJS carga, si los
+  # `.d.ts` que salen tipan. La primera vez que se ejecutó a mano encontró dos defectos
+  # con la suite entera en verde.
+  smoke:
+    name: Humo · paquete instalado
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Empaqueta, instala el tarball en un proyecto limpio y lo usa como lo usaría
+      # cualquiera: ESM, CommonJS, tipos publicados y el QR decodificado por un lector
+      # independiente.
+      - name: Empaquetar, instalar y ejecutar
+        run: npm run smoke
+
   # La puerta que protege a quien instala la librería. Es de ALCANCE, no de umbral:
   # "cero vulnerabilidades o falla". No hay nivel que bajar la próxima vez.
   # Ver la issue VF-032 para el razonamiento completo.
