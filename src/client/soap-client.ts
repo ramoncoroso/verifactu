@@ -180,7 +180,7 @@ export async function sendSoapRequest(options: SoapRequestOptions): Promise<Soap
             res.headers['content-encoding']
           ).toString('utf8');
         } catch (error) {
-          reject(error);
+          reject(error instanceof Error ? error : new Error(String(error)));
           return;
         }
 
@@ -259,7 +259,11 @@ export async function sendSoapRequest(options: SoapRequestOptions): Promise<Soap
       // PFX data» —un error de red por un problema de certificado— y todo el
       // diagnóstico de `certificateErrorFor` quedaba inalcanzable, porque
       // `validateCertificate` no se invoca en el camino real.
-      reject(esPkcs12Heredado(error) ? certificateErrorFor(error) : error);
+      if (esPkcs12Heredado(error)) {
+        reject(certificateErrorFor(error));
+      } else {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     }
   });
 }

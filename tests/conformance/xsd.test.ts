@@ -212,7 +212,7 @@ describe('XML generado por el cliente', () => {
           nonSubjectBreakdowns: [{ amount: 30, cause: 'N1' }],
         },
         totalAmount: 201,
-      } as Partial<Invoice>)
+      })
     );
     const result = validateSuministro(body);
     expect(result.valid, formatXsdErrors(result)).toBe(true);
@@ -239,7 +239,7 @@ describe('XML generado por el cliente', () => {
           ],
         },
         totalAmount: 126.2,
-      } as Partial<Invoice>)
+      })
     );
     expect(validateSuministro(body).valid).toBe(true);
     expect(body).toContain('TipoRecargoEquivalencia>5.20<');
@@ -306,7 +306,7 @@ describe('Escapado de caracteres', () => {
     const body = buildBody(
       makeInvoice({
         issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name },
-      } as Partial<Invoice>)
+      })
     );
     const result = validateSuministro(body);
     expect(result.valid, formatXsdErrors(result)).toBe(true);
@@ -330,7 +330,7 @@ describe('Escapado de caracteres', () => {
     const body = buildBody(
       makeInvoice({
         issuer: { taxId: { type: 'NIF', value: 'B12345678' }, name: 'Pepe & Hijos' },
-      } as Partial<Invoice>)
+      })
     );
     expect(body).toContain('Pepe &amp; Hijos');
     expect(body).not.toMatch(/>Pepe & Hijos</);

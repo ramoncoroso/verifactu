@@ -123,7 +123,7 @@ describe('ConcurrencyLimiter', () => {
         await limiter.execute(async () => {
           throw new Error('Operation failed');
         });
-      } catch (e) {
+      } catch {
         // Expected
       }
 

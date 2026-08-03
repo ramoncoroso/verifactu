@@ -322,12 +322,17 @@ describe('Retry Utility', () => {
         .mockResolvedValue('success');
 
       const { totalTimeMs } = await withRetryAndMetadata(operation, {
-        initialDelayMs: 10,
+        initialDelayMs: 50,
         jitterFactor: 0,
       });
 
-      // Should include at least the delay time
-      expect(totalTimeMs).toBeGreaterThanOrEqual(10);
+      // El margen no es cosmético: `setTimeout(50)` puede dispararse un poco
+      // antes y `Date.now()` tiene resolución de milisegundo, así que exigir
+      // exactamente el retardo es una aserción a filo de navaja. Con 10 ms se
+      // vio fallar en una suite completa bajo carga y pasar en aislado, que es
+      // la peor forma de test: intermitente. Lo que importa es que el tiempo
+      // total INCLUYA la espera, no que la clave al milisegundo.
+      expect(totalTimeMs).toBeGreaterThanOrEqual(40);
     });
   });
 
