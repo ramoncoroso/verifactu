@@ -30,7 +30,7 @@ documentos**.
 
 | | |
 |---|---|
-| Tests | **1026** en verde (38 ficheros) |
+| Tests | **1035** en verde (38 ficheros) |
 | Cobertura | 93,1 % · umbrales 92/92/82/91, rebaseados al proveedor v8 v4 |
 | `typecheck` + `typecheck:tests` | limpios, ambos bloqueantes en CI |
 | `lint:all` | limpio (14 warnings `no-console` intencionados) |
@@ -87,6 +87,7 @@ vendorizado en `schemas/` y **congelado por sha256**.
 | [#90](https://github.com/ramoncoroso/verifactu/pull/90) | 15 PR de dependabot | Dependencias de desarrollo al día y migración a *flat config* |
 | [#91](https://github.com/ramoncoroso/verifactu/pull/91) | — | El error del QR deja de mentir sobre la causa; test intermitente a reloj falso |
 | [#92](https://github.com/ramoncoroso/verifactu/pull/92) | — | Mínimo a **Node 20** y vitest 4 · cambio incompatible |
+| [#93](https://github.com/ramoncoroso/verifactu/pull/93) | — | El 302 sin certificado deja de salir como error de XML |
 
 ### La prueba de humo sobre el paquete instalado
 
@@ -219,14 +220,30 @@ ficheros.
 
 ### 1. Prueba contra preproducción · **el único paso que falta**
 
-Es lo único que separa a la librería de estar verificada de punta a punta.
-Necesita un certificado electrónico de representante o de sello válido.
+Necesita un certificado electrónico de representante o de sello de entidad.
+**No hay certificado de prueba**: se comprobó con uno autofirmado contra el
+servicio real y la AEAT devuelve el mismo 403 que si no se manda ninguno. Valida
+la cadena contra anclas de confianza reales y comprueba el NIF en su censo.
 
 ```
 Host sandbox: prewww1.aeat.es (representante) · prewww10.aeat.es (sello)
 ```
 
-Qué comprobar, por orden:
+**Lo que ya está verificado contra los servidores de la AEAT** (2026-08-03, sin
+certificado):
+
+| Comprobación | Resultado |
+|---|---|
+| Los cuatro endpoints del WSDL existen | 302 los cuatro · las URLs son correctas |
+| El servidor es de la AEAT | `CN=*.aeat.es`, Entrust, válido hasta 2026-12-15 |
+| Las dos URLs de cotejo del QR aceptan nuestros parámetros | 200 las dos |
+
+Y esa sonda **encontró un defecto** que ninguna capa de tests podía encontrar:
+sin certificado, la AEAT responde `302` a su página de error 403 con el cuerpo
+vacío, y la librería lo presentaba como «Failed to parse SOAP response». El
+fallo de integración más común, disfrazado de problema de XML. Corregido en #93.
+
+Con certificado, lo que queda por comprobar:
 
 1. Que el handshake TLS funciona con el certificado real.
 2. Que un alta mínima devuelve `EstadoEnvio = Correcto` y un CSV.
