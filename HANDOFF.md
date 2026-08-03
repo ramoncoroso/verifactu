@@ -1,6 +1,6 @@
 # Handoff
 
-Librería TypeScript para el sistema **Veri\*Factu** de la AEAT. Node.js 18+.
+Librería TypeScript para el sistema **Veri\*Factu** de la AEAT. Node.js 20+.
 
 > ## Estado: todos los issues cerrados, falta la prueba contra preproducción
 >
@@ -11,10 +11,16 @@ Librería TypeScript para el sistema **Veri\*Factu** de la AEAT. Node.js 18+.
 > el control de flujo del art. 16.2 está implementado y el envío por lotes
 > también.
 >
-> **Pero nadie ha enviado nunca nada a la AEAT con esto.** Todo se ha verificado
-> contra los esquemas, los vectores y el catálogo de errores oficiales, que es
-> mucho más de lo que había, pero no contra el servicio real. Ese es el único
-> paso que queda, y necesita un certificado electrónico válido.
+> **Nadie ha enviado todavía una factura a la AEAT con esto.** Lo que sí se ha
+> hecho es hablar con su servicio: los cuatro endpoints del WSDL responden y las
+> dos URLs de cotejo del QR aceptan nuestros parámetros. Esa sonda encontró un
+> defecto que ninguna capa de tests podía encontrar —ver
+> [§ Cómo continuar](#cómo-continuar)—.
+>
+> Lo que falta es el tramo que hay **detrás del certificado**: que un alta se
+> acepte. Necesita uno de representante o de sello de entidad, y **no existe
+> certificado de prueba**: se comprobó con uno autofirmado y da el mismo 403 que
+> no mandar ninguno.
 
 **Empieza por aquí:** [`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md)
 (qué estaba mal, con la prueba de mutación al final de «Metodología») →
@@ -88,6 +94,27 @@ vendorizado en `schemas/` y **congelado por sha256**.
 | [#91](https://github.com/ramoncoroso/verifactu/pull/91) | — | El error del QR deja de mentir sobre la causa; test intermitente a reloj falso |
 | [#92](https://github.com/ramoncoroso/verifactu/pull/92) | — | Mínimo a **Node 20** y vitest 4 · cambio incompatible |
 | [#93](https://github.com/ramoncoroso/verifactu/pull/93) | — | El 302 sin certificado deja de salir como error de XML |
+
+### La última tanda · 2026-08-03
+
+Cinco PR después de cerrar los issues, todas nacidas de **mirar lo que ya se
+daba por bueno**:
+
+- **#89** · el humo sobre el paquete instalado entra en el CI, y se comprueba con
+  tres mutaciones que detecta regresiones de verdad.
+- **#90** · quince PR de dependabot cerradas de golpe subiendo todo junto, con
+  migración de ESLint a *flat config*.
+- **#91** · dos de los tres hallazgos del linter escondían defectos reales: el
+  error del QR mentía sobre la causa y el test intermitente seguía usando el
+  reloj real.
+- **#92** · el mínimo sube a **Node 20** —decisión del propietario— y con él
+  vitest a la 4. Cambio incompatible: el primer release será mayor.
+- **#93** · el `302` con el que la AEAT pide certificado dejaba de parecer un
+  error de XML. Encontrado hablando con el servicio real.
+
+El patrón se repite en las cinco: **cada capa de verificación nueva encontró algo
+que la anterior no veía.** Los tests no veían el empaquetado; el empaquetado no
+veía el servicio; el servicio encontró el 302.
 
 ### La prueba de humo sobre el paquete instalado
 
@@ -298,7 +325,7 @@ Nada de esto bloquea nada, y ninguno tiene issue abierto:
 ## Comandos
 
 ```bash
-npm test                 # 977 tests
+npm test                 # 1035 tests
 npm run test:conformance # solo la capa con oráculo externo
 npm run test:coverage    # con umbrales
 npm run typecheck        # src

@@ -47,8 +47,14 @@ Hay dos cerrojos, y cada uno exige un acto deliberado y visible:
       redistribuir documentos de la AEAT y del W3C en un paquete que se anuncia MIT no
       aportaba nada. `files: ["dist"]`.
 - [ ] Verificado contra el entorno de preproducción de la AEAT que un registro es
-      aceptado. Requiere un certificado, y su tramitación tiene plazo: conviene iniciarla
-      cuanto antes porque no consume horas de ingeniería y bloquea el final.
+      aceptado. **Es la única casilla que queda.** Requiere un certificado de representante
+      o de sello de entidad, y su tramitación tiene plazo: conviene iniciarla cuanto antes
+      porque no consume horas de ingeniería y bloquea el final.
+
+      Lo verificable **sin** certificado ya está hecho (2026-08-03): los cuatro endpoints
+      del WSDL responden, el servidor presenta el certificado de la AEAT y las dos URLs de
+      cotejo del QR aceptan nuestros parámetros. Y **no hay certificado de prueba**: uno
+      autofirmado recibe el mismo 403 que no enviar ninguno.
 
 ### Cuando llegue el momento
 
@@ -69,7 +75,7 @@ El primer release será un **`2.0.0`**: desaparecen `sha256`, `formatXmlDate`,
 ## Historial de Sprints Completados
 
 ### Sprint 1: CI/CD y Calidad (Completado)
-- GitHub Actions con matrix Node 18/20/22
+- GitHub Actions con matrix Node 18/20/22 *(hoy 20/22/24, ver #92)*
 - Dependabot configurado
 - npm audit en CI
 - Codecov integrado

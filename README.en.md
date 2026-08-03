@@ -24,7 +24,7 @@ certificate.
 > a valid electronic certificate. Until then: ready to integrate and test, awaiting one last field
 > check.
 >
-> **1003 tests** · 11 CI jobs · [full history](docs/AUDITORIA_CONFORMIDAD.md) (Spanish).
+> **1035 tests** · 11 CI jobs · [full history](docs/AUDITORIA_CONFORMIDAD.md) (Spanish).
 
 ---
 
@@ -489,7 +489,13 @@ certificate: { type: 'pfx', data: Buffer.from(process.env.CERT_B64!, 'base64'), 
 certificate: { type: 'pem', certPath: '/path/cert.pem', keyPath: '/path/key.pem' }
 ```
 
-**Old FNMT certificates.** Node 18+ runs on OpenSSL 3, whose default provider no longer ships RC2 or
+> **There is no test certificate for pre-production.** Verified against the live service: a
+> self-signed one gets the same `302` to the 403 error page as sending none at all. The AEAT
+> validates the chain against recognised authorities and checks the tax ID against its census, so a
+> real **representative** or **entity seal** certificate is required. When it is missing, the
+> library says exactly that instead of failing to parse XML.
+
+**Old FNMT certificates.** Node has run on OpenSSL 3 since version 18, and its default provider no longer ships RC2 or
 RC4. If your `.p12` comes from an old export, the library detects it and tells you what to do
 instead of handing back an opaque network error (the message is in Spanish):
 
@@ -564,6 +570,7 @@ conformant**. That is why no conformance test uses the implementation as its ora
 | WSDL | `SistemaFacturacion.wsdl` | Endpoints, `SOAPAction`, operation names |
 | Error catalogue | `errores.properties` | The breakdown coherence rules |
 | **Installed package** | The tarball, in a clean project | That `exports`, the CommonJS build and the published `.d.ts` actually work |
+| **Live service** | `prewww1.aeat.es` and `prewww2.aeat.es` | That the endpoints exist and the QR checker accepts the parameters |
 
 The schemas are **frozen by sha256**: if the AEAT publishes a revision, CI fails and forces someone
 to review the diff instead of silently carrying it along (`npm run schemas:check`).
@@ -578,7 +585,7 @@ official vectors are not redundant.
 
 ```bash
 npm run build            # ESM + CJS + types
-npm test                 # 977 tests
+npm test                 # 1035 tests
 npm run test:conformance # only the layer that checks against the AEAT
 npm run test:coverage    # with thresholds
 npm run typecheck        # src

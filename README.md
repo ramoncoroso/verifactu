@@ -23,7 +23,7 @@ la huella encadenada, el XML, el QR y lo envía por SOAP con certificado electr�
 > certificado electrónico válido. Hasta entonces: apta para integrar y probar, pendiente de la
 > última prueba de campo.
 >
-> **1003 tests** · 11 jobs de CI · [histórico completo](docs/AUDITORIA_CONFORMIDAD.md).
+> **1035 tests** · 11 jobs de CI · [histórico completo](docs/AUDITORIA_CONFORMIDAD.md).
 
 ---
 
@@ -485,7 +485,13 @@ certificate: { type: 'pfx', data: Buffer.from(process.env.CERT_B64!, 'base64'), 
 certificate: { type: 'pem', certPath: '/ruta/cert.pem', keyPath: '/ruta/key.pem' }
 ```
 
-**Certificados antiguos de la FNMT.** Node 18+ va contra OpenSSL 3, que ya no trae RC2/RC4 en su
+> **No existe certificado de prueba para preproducción.** Comprobado contra el servicio real: uno
+> autofirmado recibe el mismo `302` a la página de error 403 que si no se envía ninguno. La AEAT
+> valida la cadena contra autoridades reconocidas y comprueba el NIF en su censo, así que hace
+> falta un certificado de **representante** o de **sello de entidad** de verdad. Cuando falta, la
+> librería lo dice con esas palabras en vez de fallar al parsear el XML.
+
+**Certificados antiguos de la FNMT.** Node va contra OpenSSL 3 desde la versión 18, y ese ya no trae RC2/RC4 en su
 proveedor por defecto. Si tu `.p12` es de una exportación antigua, la librería lo detecta y te dice
 qué hacer en vez de devolverte un error de red opaco:
 
@@ -559,6 +565,7 @@ eso ningún test de conformidad usa la implementación como oráculo:
 | WSDL | `SistemaFacturacion.wsdl` | Endpoints, `SOAPAction`, nombres de operación |
 | Catálogo de errores | `errores.properties` | Las reglas de coherencia del desglose |
 | **Paquete instalado** | El tarball, en un proyecto limpio | Que `exports`, el build de CommonJS y los `.d.ts` publicados funcionen de verdad |
+| **Servicio real** | `prewww1.aeat.es` y `prewww2.aeat.es` | Que los endpoints existan y que el cotejo del QR acepte los parámetros |
 
 Los esquemas están **congelados por sha256**: si la AEAT publica una revisión, el CI falla y obliga
 a revisar el diff en lugar de arrastrarlo en silencio (`npm run schemas:check`).
@@ -573,7 +580,7 @@ no son redundantes.
 
 ```bash
 npm run build            # ESM + CJS + tipos
-npm test                 # 977 tests
+npm test                 # 1035 tests
 npm run test:conformance  # solo la capa que contrasta con la AEAT
 npm run test:coverage    # con umbrales
 npm run typecheck        # src

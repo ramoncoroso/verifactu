@@ -221,7 +221,7 @@ Usa NIFs de prueba válidos pero ficticios:
 ## Proceso de Review
 
 1. Todos los PRs requieren al menos una aprobación
-2. Los tests deben pasar en CI (Node 18, 20, 22)
+2. Los tests deben pasar en CI (Node 20, 22, 24)
 3. El linter no debe reportar errores
 4. La cobertura no debe disminuir
 
