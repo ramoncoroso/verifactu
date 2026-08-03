@@ -114,6 +114,20 @@ const ASCII_IMPRIMIBLE = /^[\x20-\x7E]*$/;
  *    fuera de ASCII se codificaría mal en silencio. Y el §4 de la especificación
  *    del QR lo prohíbe de todos modos.
  */
+/**
+ * Bytes que caben en un QR de versión 40 —la mayor— en modo byte, por nivel de
+ * corrección de errores. Medidos contra `qrcode-generator`, no copiados.
+ *
+ * El nivel por defecto es `M`, y de ahí venía el 2331 que estaba cableado como
+ * si fuera el máximo de todos los niveles.
+ */
+export const CAPACIDAD_BYTES_POR_NIVEL: Readonly<Record<'L' | 'M' | 'Q' | 'H', number>> = {
+  L: 2953,
+  M: 2331,
+  Q: 1663,
+  H: 1273,
+};
+
 function buildMatrix(data: string, ec: 'L' | 'M' | 'Q' | 'H'): boolean[][] {
   if (!ASCII_IMPRIMIBLE.test(data)) {
     throw new QrGenerationError(
@@ -126,8 +140,20 @@ function buildMatrix(data: string, ec: 'L' | 'M' | 'Q' | 'H'): boolean[][] {
     qr = qrcode(0, ec); // 0 = versión automática
     qr.addData(data, 'Byte');
     qr.make();
-  } catch {
-    throw new QrDataTooLargeError(data.length, 2331);
+  } catch (error) {
+    // `qrcode-generator` lanza CADENAS, no `Error`. Descartarlas tiraba el
+    // único texto que decía qué había pasado.
+    const motivo = error instanceof Error ? error.message : String(error);
+
+    // Antes, cualquier fallo se atribuía a «datos demasiado grandes» con un
+    // máximo cableado a 2331 —la capacidad del nivel M—. Con nivel H eso
+    // producía «1400 bytes exceeds maximum 2331», un mensaje que se contradice
+    // a sí mismo; y un nivel de corrección ilegal, que un consumidor sin tipos
+    // puede pasar, mandaba a acortar unos datos que no eran el problema.
+    if (/code length overflow/i.test(motivo)) {
+      throw new QrDataTooLargeError(data.length, CAPACIDAD_BYTES_POR_NIVEL[ec] ?? 0);
+    }
+    throw new QrGenerationError(`No se pudo generar el código QR: ${motivo}`);
   }
   const n = qr.getModuleCount();
   return Array.from({ length: n }, (_, row) =>
