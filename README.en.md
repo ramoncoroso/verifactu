@@ -9,7 +9,7 @@ certificate.
 [![CI](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml/badge.svg)](https://github.com/ramoncoroso/verifactu/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/ramoncoroso/verifactu/branch/main/graph/badge.svg)](https://codecov.io/gh/ramoncoroso/verifactu)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-green.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-1%20(0%20transitive)-brightgreen.svg)]()
 
@@ -80,7 +80,7 @@ import { VerifactuClient } from '@ramoncoroso/verifactu';
 > 2024 — a 223-byte version that has never been touched. You can also install straight from the
 > repository: `npm install github:ramoncoroso/verifactu`.
 
-Requires **Node.js ≥ 18**. Ships both ESM and CommonJS.
+Requires **Node.js ≥ 20**. Ships both ESM and CommonJS.
 
 ## Quick start
 

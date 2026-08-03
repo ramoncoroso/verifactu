@@ -30,8 +30,8 @@ documentos**.
 
 | | |
 |---|---|
-| Tests | **1017** en verde (37 ficheros) |
-| Cobertura | 93,5 % · umbrales 91/94/87/91, ajustados a la realidad |
+| Tests | **1026** en verde (38 ficheros) |
+| Cobertura | 93,1 % · umbrales 92/92/82/91, rebaseados al proveedor v8 v4 |
 | `typecheck` + `typecheck:tests` | limpios, ambos bloqueantes en CI |
 | `lint:all` | limpio (14 warnings `no-console` intencionados) |
 | Dependencias de runtime | **1** (`qrcode-generator`, MIT, 0 transitivas) |
@@ -86,6 +86,7 @@ vendorizado en `schemas/` y **congelado por sha256**.
 | [#89](https://github.com/ramoncoroso/verifactu/pull/89) | — | El humo sobre el paquete instalado entra en el CI |
 | [#90](https://github.com/ramoncoroso/verifactu/pull/90) | 15 PR de dependabot | Dependencias de desarrollo al día y migración a *flat config* |
 | [#91](https://github.com/ramoncoroso/verifactu/pull/91) | — | El error del QR deja de mentir sobre la causa; test intermitente a reloj falso |
+| [#92](https://github.com/ramoncoroso/verifactu/pull/92) | — | Mínimo a **Node 20** y vitest 4 · cambio incompatible |
 
 ### La prueba de humo sobre el paquete instalado
 
@@ -183,12 +184,15 @@ que rebasear. Queda escrito en `vitest.config.ts`.
   2024 —223 bytes, nunca actualizado—. Reclamarlo era lento e incierto y habría
   bloqueado la publicación mientras tanto; el alcance está disponible hoy y
   conserva la marca.
-- **TypeScript se queda en la 5.9 y vitest en la 3.** No es dejadez: `typescript-eslint@8`
-  declara `peer typescript ">=4.8.4 <6.1.0"`, así que la 7 desactivaría las reglas
-  con información de tipos —las que cazaron varios defectos de esta auditoría—. Y
-  vitest 4 exige `node ^20 || ^22 || >=24`, mientras la librería promete `>=18`;
-  subirlo obligaría a dejar Node 18 sin probar o a romper la compatibilidad. Las
-  dos PR de dependabot se cerraron con ese motivo escrito.
+- **TypeScript se queda en la 5.9.** No es dejadez: `typescript-eslint@8`
+  —incluidas sus alphas— declara `peer typescript ">=4.8.4 <6.1.0"`, así que la 7
+  desactivaría las reglas con información de tipos, las que cazaron varios
+  defectos de esta auditoría. Revisar cuando `typescript-eslint` la admita.
+- **El mínimo es Node 20**, subido a decisión del propietario el 2026-08-03. Node
+  18 salió de EOL en abril de 2025 y bloqueaba vitest 4. Es un cambio
+  **incompatible** para quien instala la librería, así que el primer release será
+  mayor. La matriz del CI arranca justo en el mínimo prometido, y hay un test que
+  impide que `engines`, la matriz y los README divergan.
 - **La auditoría de seguridad es de alcance, no de umbral.** Árbol de producción
   con tolerancia cero (bloqueante); árbol completo, informativo. No hay nivel que
   bajar la próxima vez.
@@ -243,10 +247,6 @@ Nada de esto bloquea nada, y ninguno tiene issue abierto:
 - **`InvoiceBatcher`** — `enqueue()` + `flush()` automático al llegar a 1000
   registros o al vencer `t`, lo que ocurra primero. Hoy hay que orquestar el
   lote a mano con `submitInvoices()`.
-- **Decidir si se sube el mínimo a Node 20** — Node 18 está en EOL desde abril
-  de 2025, y mantenerlo bloquea vitest 4 y arrastrará más herramientas. Es un
-  cambio incompatible para quien instala la librería, así que la decisión es del
-  propietario, no de una limpieza de dependencias.
 - **Persistencia de la cadena** — la librería expone `getChainState()` y acepta
   `chainState`, pero no trae adaptador. Un `ChainStore` con implementación en
   fichero y en Postgres ahorraría a cada usuario escribirlo.
