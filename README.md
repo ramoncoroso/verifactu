@@ -12,14 +12,18 @@ la huella encadenada, el XML, el QR y lo envía por SOAP con certificado electr�
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencias-1%20(0%20transitivas)-brightgreen.svg)]()
 
-> ### Estado
+> ### Estado · *release candidate*
 >
-> Los **once defectos bloqueantes** que detectó la auditoría de conformidad están corregidos y
-> verificados contra fuentes oficiales de la AEAT. Falta la validación contra el entorno de
-> **preproducción real**, que requiere un certificado electrónico válido, así que trátala como
-> *release candidate*: apta para integrar y probar, pendiente de la última prueba de campo.
+> Los **once defectos bloqueantes** que detectó la auditoría de conformidad están corregidos, y no
+> queda ningún issue abierto. Todo se verifica contra fuentes oficiales de la AEAT —sus XSD, su
+> WSDL, sus vectores de huella y su catálogo de errores—, y la prueba de humo del CI comprueba que
+> el **paquete publicado** funciona de verdad al instalarlo.
 >
-> El histórico completo está en [`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md).
+> Lo único que falta es la validación contra el entorno de **preproducción real**, que requiere un
+> certificado electrónico válido. Hasta entonces: apta para integrar y probar, pendiente de la
+> última prueba de campo.
+>
+> **1003 tests** · 11 jobs de CI · [histórico completo](docs/AUDITORIA_CONFORMIDAD.md).
 
 ---
 
@@ -554,6 +558,7 @@ eso ningún test de conformidad usa la implementación como oráculo:
 | Decodificación de QR | `jsqr`, un lector independiente | Que el QR **se lea** y diga lo que debe |
 | WSDL | `SistemaFacturacion.wsdl` | Endpoints, `SOAPAction`, nombres de operación |
 | Catálogo de errores | `errores.properties` | Las reglas de coherencia del desglose |
+| **Paquete instalado** | El tarball, en un proyecto limpio | Que `exports`, el build de CommonJS y los `.d.ts` publicados funcionen de verdad |
 
 Los esquemas están **congelados por sha256**: si la AEAT publica una revisión, el CI falla y obliga
 a revisar el diff en lugar de arrastrarlo en silencio (`npm run schemas:check`).
@@ -575,6 +580,7 @@ npm run typecheck        # src
 npm run typecheck:tests  # tests (sí, también compilan)
 npm run lint:all         # src + tests
 npm run schemas:check    # integridad de los esquemas oficiales (sin red)
+npm run smoke            # empaqueta, instala el tarball y lo usa como un usuario
 ```
 
 ## Seguridad

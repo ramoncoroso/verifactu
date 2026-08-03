@@ -37,8 +37,8 @@ documentos**.
 | Dependencias de runtime | **1** (`qrcode-generator`, MIT, 0 transitivas) |
 | `npm audit --omit=dev` | 0 vulnerabilidades, puerta de tolerancia cero |
 | Duración de la suite | 5,6 s |
-| Jobs del CI | 8, incluido el humo sobre el paquete instalado |
-| Issues abiertos | **0** |
+| Jobs del CI | 11, incluido el humo sobre el paquete instalado |
+| Issues abiertos | **0** · PRs abiertos: **0** · ramas: solo `main` |
 | Publicación en npm | **desarmada** a doble llave (ver abajo) |
 
 ---
@@ -147,6 +147,12 @@ del README las cadenas del builder y **las ejecuta**.
   2024 —223 bytes, nunca actualizado—. Reclamarlo era lento e incierto y habría
   bloqueado la publicación mientras tanto; el alcance está disponible hoy y
   conserva la marca.
+- **TypeScript se queda en la 5.9 y vitest en la 3.** No es dejadez: `typescript-eslint@8`
+  declara `peer typescript ">=4.8.4 <6.1.0"`, así que la 7 desactivaría las reglas
+  con información de tipos —las que cazaron varios defectos de esta auditoría—. Y
+  vitest 4 exige `node ^20 || ^22 || >=24`, mientras la librería promete `>=18`;
+  subirlo obligaría a dejar Node 18 sin probar o a romper la compatibilidad. Las
+  dos PR de dependabot se cerraron con ese motivo escrito.
 - **La auditoría de seguridad es de alcance, no de umbral.** Árbol de producción
   con tolerancia cero (bloqueante); árbol completo, informativo. No hay nivel que
   bajar la próxima vez.
@@ -201,6 +207,10 @@ Nada de esto bloquea nada, y ninguno tiene issue abierto:
 - **`InvoiceBatcher`** — `enqueue()` + `flush()` automático al llegar a 1000
   registros o al vencer `t`, lo que ocurra primero. Hoy hay que orquestar el
   lote a mano con `submitInvoices()`.
+- **Decidir si se sube el mínimo a Node 20** — Node 18 está en EOL desde abril
+  de 2025, y mantenerlo bloquea vitest 4 y arrastrará más herramientas. Es un
+  cambio incompatible para quien instala la librería, así que la decisión es del
+  propietario, no de una limpieza de dependencias.
 - **Persistencia de la cadena** — la librería expone `getChainState()` y acepta
   `chainState`, pero no trae adaptador. Un `ChainStore` con implementación en
   fichero y en Postgres ahorraría a cada usuario escribirlo.

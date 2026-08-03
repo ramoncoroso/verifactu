@@ -13,14 +13,18 @@ certificate.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-1%20(0%20transitive)-brightgreen.svg)]()
 
-> ### Status
+> ### Status · release candidate
 >
-> The **eleven blocking defects** found by the conformance audit are fixed and verified against
-> official AEAT sources. Validation against the **real pre-production environment** is still
-> pending — it requires a valid electronic certificate — so treat this as a *release candidate*:
-> ready to integrate and test, awaiting one last field check.
+> The **eleven blocking defects** found by the conformance audit are fixed, and no issues remain
+> open. Everything is verified against official AEAT sources — their XSDs, their WSDL, their hash
+> vectors and their error catalogue — and a CI smoke job checks that the **published package**
+> actually works once installed.
 >
-> Full history in [`docs/AUDITORIA_CONFORMIDAD.md`](docs/AUDITORIA_CONFORMIDAD.md) (Spanish).
+> The only thing left is validation against the **real pre-production environment**, which requires
+> a valid electronic certificate. Until then: ready to integrate and test, awaiting one last field
+> check.
+>
+> **1003 tests** · 11 CI jobs · [full history](docs/AUDITORIA_CONFORMIDAD.md) (Spanish).
 
 ---
 
@@ -559,6 +563,7 @@ conformant**. That is why no conformance test uses the implementation as its ora
 | QR decoding | `jsqr`, an independent reader | That the QR **can be read** and says what it must |
 | WSDL | `SistemaFacturacion.wsdl` | Endpoints, `SOAPAction`, operation names |
 | Error catalogue | `errores.properties` | The breakdown coherence rules |
+| **Installed package** | The tarball, in a clean project | That `exports`, the CommonJS build and the published `.d.ts` actually work |
 
 The schemas are **frozen by sha256**: if the AEAT publishes a revision, CI fails and forces someone
 to review the diff instead of silently carrying it along (`npm run schemas:check`).
@@ -580,6 +585,7 @@ npm run typecheck        # src
 npm run typecheck:tests  # tests (they compile too)
 npm run lint:all         # src + tests
 npm run schemas:check    # integrity of the official schemas (no network)
+npm run smoke            # packs, installs the tarball and uses it like a consumer
 ```
 
 ## Security
