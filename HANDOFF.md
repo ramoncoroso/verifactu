@@ -30,13 +30,13 @@ documentos**.
 
 | | |
 |---|---|
-| Tests | **989** en verde (35 ficheros) |
+| Tests | **1003** en verde (36 ficheros) |
 | Cobertura | 93,5 % · umbrales 91/94/87/91, ajustados a la realidad |
 | `typecheck` + `typecheck:tests` | limpios, ambos bloqueantes en CI |
 | `lint:all` | limpio (14 warnings `no-console` intencionados) |
 | Dependencias de runtime | **1** (`qrcode-generator`, MIT, 0 transitivas) |
 | `npm audit --omit=dev` | 0 vulnerabilidades, puerta de tolerancia cero |
-| Duración de la suite | 4,5 s |
+| Duración de la suite | 5,6 s |
 | Issues abiertos | **0** |
 | Publicación en npm | **desarmada** a doble llave (ver abajo) |
 
@@ -81,6 +81,40 @@ vendorizado en `schemas/` y **congelado por sha256**.
 | [#85](https://github.com/ramoncoroso/verifactu/pull/85) | #68 #28 | Los tests entran en la puerta de calidad; prueba de mutación documentada |
 | [#86](https://github.com/ramoncoroso/verifactu/pull/86) | — | README en ambos idiomas, con los 24 ejemplos compilados antes de publicarlos |
 | [#87](https://github.com/ramoncoroso/verifactu/pull/87) | #46 | Alcance `@ramoncoroso/verifactu`, acceso público y esquemas fuera del tarball |
+| [#88](https://github.com/ramoncoroso/verifactu/pull/88) | — | Los ejemplos del README **se ejecutan**, no solo compilan |
+
+### La prueba de humo sobre el paquete instalado
+
+**No está automatizada, y encontró dos defectos.** Se hizo a mano el 2026-08-03,
+después de dar por buena la documentación, y conviene repetirla antes de publicar:
+
+```bash
+npm run build && npm pack --pack-destination /tmp/humo
+mkdir -p /tmp/humo/app && cd /tmp/humo/app
+printf '{"name":"humo","version":"1.0.0","type":"module","private":true}' > package.json
+npm install /tmp/humo/ramoncoroso-verifactu-1.0.0.tgz
+# y usar la librería como la usaría cualquiera
+```
+
+Lo que se comprobó: instalación limpia (2 paquetes, 1 dependencia, 0
+vulnerabilidades), contenido del tarball, **ESM** y **CommonJS**, los `.d.ts`
+publicados bajo `--strict`, el vector de huella 6.1 de la AEAT, el QR
+decodificado con `jsqr` coincidiendo carácter a carácter con la URL de cotejo,
+los endpoints del WSDL y el rechazo local de lo que la AEAT rechazaría.
+
+Lo que encontró, los dos en el README y los dos míos:
+
+1. **Tres ejemplos por idioma reventaban al ejecutarse** —construían la factura
+   sin `.type()`—, incluido el de «Inicio rápido». **Compilaban perfectamente**:
+   el tipo de factura se valida en tiempo de ejecución, no en el de tipos, y la
+   verificación del #86 solo comprobó que compilaran. Compilar no es ejecutar.
+2. **El ejemplo de exentas no era conforme**: `E2` con régimen general, que la
+   AEAT rechaza con el error 1199. Lo cazó la validación de #81 —la librería
+   tenía razón y la documentación no—. De paso, el comentario llamaba a `E2`
+   «entrega intracomunitaria» cuando es el art. 21, exportaciones.
+
+El arreglo duradero está en `tests/unit/ejemplos-del-readme.test.ts`, que extrae
+del README las cadenas del builder y **las ejecuta**.
 
 ### Decisiones que conviene no revertir sin leer el porqué
 
@@ -158,6 +192,10 @@ Los tres primeros fallos que aparezcan probablemente sean de datos censales
 
 Nada de esto bloquea nada, y ninguno tiene issue abierto:
 
+- **Automatizar la prueba de humo en el CI** — un job que haga `npm pack`, instale
+  el tarball en un proyecto limpio y ejecute un guion de uso real. Es la única
+  capa que valida el **artefacto publicado**, y hoy se hace a mano. Habría
+  cazado sola los dos defectos de arriba.
 - **`InvoiceBatcher`** — `enqueue()` + `flush()` automático al llegar a 1000
   registros o al vencer `t`, lo que ocurra primero. Hoy hay que orquestar el
   lote a mano con `submitInvoices()`.
