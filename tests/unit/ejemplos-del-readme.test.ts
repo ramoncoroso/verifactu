@@ -58,6 +58,12 @@ describe.each(['README.md', 'README.en.md'])('%s', (fichero) => {
     (_indice, codigo) => {
       // Se ejecuta el texto del README tal cual, con el builder real inyectado.
       // Si alguien edita el ejemplo y lo rompe, este test se pone rojo.
+      //
+      // `no-implied-eval` existe para no evaluar entrada ajena. Aquí la entrada
+      // es un fichero de este mismo repositorio, leído en tiempo de test y nunca
+      // en tiempo de ejecución de la librería. Es la única forma de que el
+      // oráculo sea el ejemplo corriendo y no lo que alguien crea que hace.
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
       const construir = new Function('InvoiceBuilder', codigo) as (b: unknown) => Invoice;
       const factura = construir(InvoiceBuilder);
       // Y lo construido tiene que ser emisible de verdad, no solo no lanzar.
