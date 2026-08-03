@@ -83,6 +83,8 @@ vendorizado en `schemas/` y **congelado por sha256**.
 | [#86](https://github.com/ramoncoroso/verifactu/pull/86) | — | README en ambos idiomas, con los 24 ejemplos compilados antes de publicarlos |
 | [#87](https://github.com/ramoncoroso/verifactu/pull/87) | #46 | Alcance `@ramoncoroso/verifactu`, acceso público y esquemas fuera del tarball |
 | [#88](https://github.com/ramoncoroso/verifactu/pull/88) | — | Los ejemplos del README **se ejecutan**, no solo compilan |
+| [#89](https://github.com/ramoncoroso/verifactu/pull/89) | — | El humo sobre el paquete instalado entra en el CI |
+| [#90](https://github.com/ramoncoroso/verifactu/pull/90) | 15 PR de dependabot | Dependencias de desarrollo al día y migración a *flat config* |
 
 ### La prueba de humo sobre el paquete instalado
 
@@ -121,6 +123,35 @@ dos en el README y los dos míos:
 
 El arreglo duradero está en `tests/unit/ejemplos-del-readme.test.ts`, que extrae
 del README las cadenas del builder y **las ejecuta**.
+
+### Limpieza del repositorio · 2026-08-03
+
+Estaba en **15 PR abiertos y una rama huérfana**. Ahora: 0 PR, 0 issues y solo
+`main`.
+
+Las quince eran de dependabot y **todas estaban en rojo**: su CI fallaba en
+`npm ci` a los diez segundos porque el lockfile cambió de nombre al adoptar el
+alcance en #87, y su base era anterior a trece PR de trabajo. Rebasarlas una a
+una son quince ciclos de CI, así que se subió todo junto en #90 y se cerraron en
+bloque con el motivo escrito en cada una.
+
+Se borró también `master`, un resto de la renombrada: ancestro de `main` y sin un
+solo commit propio. El CI dejó de dispararse en ella.
+
+Tres defectos reales que destaparon las reglas nuevas del linter al subir, y que
+no eran ruido:
+
+- `soap-client.ts` rechazaba promesas con un `unknown`; ahora garantiza `Error`.
+- Dos `catch` ligaban una variable que no usaban.
+- `retry.test.ts` tenía una aserción de tiempo a filo de navaja —`>= 10` con un
+  retardo de 10 ms— que **se vio fallar** en una suite completa bajo carga y
+  pasar en aislado. Un test intermitente es peor que ninguno: pasa a 50 ms con
+  margen de 10.
+
+Y un aviso para el próximo que mire la cobertura: si alguien sube
+`@vitest/coverage-v8` a la 4, `branches` cae del 89,6 al 84,6 **sin que cambie
+una línea de código** —mide las ramas de otra forma—. No es una regresión; hay
+que rebasear. Queda escrito en `vitest.config.ts`.
 
 ### Decisiones que conviene no revertir sin leer el porqué
 
