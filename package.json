@@ -80,7 +80,7 @@
     "eslint": "^10.8.0",
     "husky": "^9.1.7",
     "jsqr": "^1.4.0",
-    "libxml2-wasm": "^0.7.1",
+    "libxml2-wasm": "^0.7.2",
     "semantic-release": "^25.0.8",
     "tsup": "^8.0.0",
     "typescript": "^5.3.0",
